@@ -1,0 +1,102 @@
+# ---- Android build outputs ----
+/build/
+/*/build/
+/app/build/
+**/generated/
+captures/
+
+# ---- Gradle ----
+.gradle/
+**/.gradle/
+!gradle/wrapper/gradle-wrapper.jar
+!gradle/wrapper/gradle-wrapper.properties
+gradle-app.setting
+
+# ---- Local configuration ----
+local.properties
+keystore.properties
+
+# ---- Keystores / signing ----
+*.jks
+*.keystore
+*.pem
+*.p12
+*.pfx
+
+# ---- IntelliJ / Android Studio ----
+.idea/
+*.iml
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/gradle.xml
+.idea/**/dictionaries
+.idea/**/libraries
+.idea/**/assetWizardSettings.xml
+.idea/**/deploymentTargetDropDown.xml
+.idea/caches/
+.idea/modules/
+.idea/navEditor.xml
+.idea/other.xml
+
+# ---- VS Code ----
+.vscode/
+
+# ---- Kotlin / Java ----
+*.class
+*.kt.metadata
+
+# ---- Logs / temp ----
+*.log
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# ---- OS junk ----
+.DS_Store
+Thumbs.db
+
+# ---- Crash / profiling ----
+hs_err_pid*
+replay_pid*
+
+# ---- NDK / CMake (if added later) ----
+.obj/
+.externalNativeBuild/
+.cxx/
+
+# ---- APK / Bundles / Outputs ----
+*.apk
+*.aab
+*.ap_
+outputs/
+
+# ---- Lint reports ----
+lint/generated/
+lint/intermediates/
+lint/tmp/
+*.sarif
+
+# ---- Android test results ----
+outputs/androidTest-results/
+outputs/unit_test_results/
+
+# ---- Cache / indexing ----
+.kotlin/
+.idea/kotlin/
+.kotlin_module
+
+# ---- Misc ----
+/navigation.json
+
+# ---- Keep executable scripts ----
+!/gradlew
+!/gradlew.bat
+
+# ---- Ignore generated SSH key files if accidentally placed in repo root ----
+ssh_private_key
+ssh_public_key
+ssh_private_*
+ssh_public_*
+
+# End of .gitignore

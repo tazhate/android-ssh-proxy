@@ -1,0 +1,93 @@
+name: Build & Release APK
+
+on:
+  push:
+    tags:
+      - "v*"
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: write
+
+    env:
+      JAVA_VERSION: "17"
+      SIGNING_PRESENT: ${{ secrets.ANDROID_KEYSTORE_BASE64 != '' && secrets.ANDROID_KEY_ALIAS != '' }}
+      BUILD_DIR: app/build/outputs/apk/release
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up JDK
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: ${{ env.JAVA_VERSION }}
+          cache: gradle
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Decode keystore (if provided)
+        if: env.SIGNING_PRESENT == 'true'
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 -d > keystore.jks
+          echo "storeFile=keystore.jks" >> keystore.properties
+          echo "storePassword=${{ secrets.ANDROID_KEYSTORE_PASSWORD }}" >> keystore.properties
+          echo "keyAlias=${{ secrets.ANDROID_KEY_ALIAS }}" >> keystore.properties
+          echo "keyPassword=${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }}" >> keystore.properties
+
+      - name: Gradle assembleRelease
+        run: ./gradlew assembleRelease --no-daemon
+
+      - name: (Optional) Sign APK with apksigner
+        if: env.SIGNING_PRESENT == 'true'
+        run: |
+            APK=$(ls $BUILD_DIR/*-unsigned.apk 2>/dev/null || true)
+            if [ -n "$APK" ]; then
+              echo "Signing $APK"
+              $ANDROID_HOME/build-tools/$(ls $ANDROID_HOME/build-tools | sort -V | tail -1)/apksigner sign \
+                --ks keystore.jks \
+                --ks-pass pass:${{ secrets.ANDROID_KEYSTORE_PASSWORD }} \
+                --ks-key-alias ${{ secrets.ANDROID_KEY_ALIAS }} \
+                --key-pass pass:${{ secrets.ANDROID_KEY_ALIAS_PASSWORD }} \
+                "$APK"
+              mv "$APK" "${APK/-unsigned/}"
+            else
+              echo "No unsigned APK found, assuming already signed."
+            fi
+
+      - name: Locate APK
+        id: locate
+        run: |
+          APK=$(ls $BUILD_DIR/*.apk | head -1)
+          echo "apk=$APK" >> $GITHUB_OUTPUT
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-apk
+          path: ${{ steps.locate.outputs.apk }}
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          VERSION=${GITHUB_REF_NAME#v}
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: Release ${{ steps.version.outputs.version }}
+          draft: false
+          prerelease: false
+          files: |
+            ${{ steps.locate.outputs.apk }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

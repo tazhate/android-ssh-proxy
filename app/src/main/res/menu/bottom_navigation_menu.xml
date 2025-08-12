@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/navigation_home"
+        android:icon="@drawable/ic_power"
+        android:title="Connect" />
+    
+    <item
+        android:id="@+id/navigation_servers"
+        android:icon="@drawable/ic_server"
+        android:title="Servers" />
+    
+    <item
+        android:id="@+id/navigation_keys"
+        android:icon="@drawable/ic_key"
+        android:title="Keys" />
+    
+    <item
+        android:id="@+id/navigation_instructions"
+        android:icon="@drawable/ic_help"
+        android:title="Setup" />
+    
+    <item
+        android:id="@+id/navigation_log"
+        android:icon="@drawable/ic_log"
+        android:title="Log" />
+</menu>
