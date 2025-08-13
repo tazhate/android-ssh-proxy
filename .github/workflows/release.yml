@@ -57,7 +57,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
-          name: SSH Proxy ${{ steps.version.outputs.version }} (Debug)
+          name: SSH Proxy ${{ steps.version.outputs.version }}
           draft: false
           prerelease: false
           files: |
