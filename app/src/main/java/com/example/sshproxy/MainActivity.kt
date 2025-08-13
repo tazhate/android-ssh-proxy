@@ -11,12 +11,27 @@ import com.example.sshproxy.ui.settings.SettingsFragment
 import com.example.sshproxy.ui.setup.*
 import com.google.android.material.navigation.NavigationBarView
 
+import com.example.sshproxy.data.PreferencesManager
+import androidx.appcompat.app.AppCompatDelegate
+import androidx.core.os.LocaleListCompat
+
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainNewBinding
     private lateinit var setupManager: SetupManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val preferencesManager = PreferencesManager(this)
+        val theme = preferencesManager.getTheme()
+        
+        android.util.Log.d("MainActivity", "onCreate - Current theme: $theme")
+        
+        // Применяем тему ПЕРЕД вызовом super.onCreate()
+        applyTheme(theme)
+        
         super.onCreate(savedInstanceState)
+        
+        applyLanguage(preferencesManager.getLanguage())
+
         binding = ActivityMainNewBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
@@ -28,6 +43,33 @@ class MainActivity : AppCompatActivity() {
         } else {
             setupNavigation()
         }
+    }
+
+    private fun applyTheme(theme: String) {
+        android.util.Log.d("MainActivity", "Applying theme: $theme")
+        when (theme) {
+            "light" -> {
+                android.util.Log.d("MainActivity", "Setting MODE_NIGHT_NO")
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_NO)
+            }
+            "dark" -> {
+                android.util.Log.d("MainActivity", "Setting MODE_NIGHT_YES")
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_YES)
+            }
+            else -> {
+                android.util.Log.d("MainActivity", "Setting MODE_NIGHT_FOLLOW_SYSTEM")
+                AppCompatDelegate.setDefaultNightMode(AppCompatDelegate.MODE_NIGHT_FOLLOW_SYSTEM)
+            }
+        }
+    }
+
+    private fun applyLanguage(language: String) {
+        val localeList = if (language == "system") {
+            LocaleListCompat.getEmptyLocaleList()
+        } else {
+            LocaleListCompat.forLanguageTags(language)
+        }
+        AppCompatDelegate.setApplicationLocales(localeList)
     }
 
     private fun setupNavigation() {
@@ -97,6 +139,10 @@ class MainActivity : AppCompatActivity() {
         // Show bottom navigation and go to main app
         binding.bottomNavigation.visibility = android.view.View.VISIBLE
         setupNavigation()
+        // Load the home fragment immediately after setup
+        loadFragment(HomeFragment())
+        // Set the home item as selected in bottom navigation
+        binding.bottomNavigation.selectedItemId = R.id.navigation_home
     }
 
     fun showSetupFlow() {

@@ -57,12 +57,12 @@ class ServersFragment : Fragment() {
             },
             onServerDelete = { server: Server ->
                 MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Delete Server")
-                    .setMessage("Delete ${server.name}?")
-                    .setPositiveButton("Delete") { _, _ ->
+                    .setTitle(getString(com.example.sshproxy.R.string.delete_server))
+                    .setMessage(getString(com.example.sshproxy.R.string.delete_server_confirmation_with_name, server.name))
+                    .setPositiveButton(getString(com.example.sshproxy.R.string.delete)) { _, _ ->
                         viewModel.deleteServer(server)
                     }
-                    .setNegativeButton("Cancel", null)
+                    .setNegativeButton(getString(com.example.sshproxy.R.string.cancel), null)
                     .show()
             },
             keyRepository = keyRepository,

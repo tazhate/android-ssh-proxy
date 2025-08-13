@@ -54,8 +54,8 @@ class AddFirstServerFragment : Fragment() {
             val isVisible = binding.advancedOptionsLayout.visibility == View.VISIBLE
             binding.advancedOptionsLayout.visibility = if (isVisible) View.GONE else View.VISIBLE
             binding.btnToggleAdvanced.setIconResource(
-                if (isVisible) R.drawable.ic_expand_more 
-                else R.drawable.ic_expand_less
+                if (isVisible) com.example.sshproxy.R.drawable.ic_expand_more 
+                else com.example.sshproxy.R.drawable.ic_expand_less
             )
         }
         
@@ -91,10 +91,10 @@ class AddFirstServerFragment : Fragment() {
                     username = user
                 )
                 serverRepository.insertServer(server)
-                Toast.makeText(context, "Server added successfully", Toast.LENGTH_SHORT).show()
-                completeSetup()
+                Toast.makeText(context, getString(com.example.sshproxy.R.string.server_added), Toast.LENGTH_SHORT).show()
+                (activity as? MainActivity)?.completeSetup()
             } catch (e: Exception) {
-                Toast.makeText(context, "Failed to add server: ${e.message}", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, getString(com.example.sshproxy.R.string.error_adding_server, e.message), Toast.LENGTH_LONG).show()
             }
         }
     }

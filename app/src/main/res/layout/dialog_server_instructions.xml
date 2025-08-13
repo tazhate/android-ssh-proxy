@@ -9,7 +9,7 @@
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Follow these steps to configure your server:"
+        android:text="@string/follow_steps_to_configure_server"
         android:textAppearance="?attr/textAppearanceBodyMedium"
         android:layout_marginBottom="16dp" />
 
@@ -44,13 +44,13 @@
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_marginTop="16dp"
-        android:text="Copy Instructions"
+        android:text="@string/copy_instructions"
         app:icon="@drawable/ic_copy" />
 
     <TextView
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="⚠️ These commands will create a restricted user that can only forward ports"
+        android:text="@string/restricted_user_warning"
         android:textAppearance="?attr/textAppearanceCaption"
         android:textColor="?attr/colorOnSurfaceVariant"
         android:layout_marginTop="12dp" />

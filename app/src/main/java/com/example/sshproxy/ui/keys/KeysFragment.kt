@@ -50,7 +50,7 @@ class KeysFragment : Fragment() {
                             adapter.setActiveKeyId(newKey.id)
                         }
                     }
-                    Toast.makeText(context, "Key '$name' generated and set as active", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, getString(com.example.sshproxy.R.string.key_generated_and_set_as_active, name), Toast.LENGTH_SHORT).show()
                 }
             }.show(parentFragmentManager, "add_key")
         }
@@ -66,14 +66,14 @@ class KeysFragment : Fragment() {
             },
             onKeyDelete = { key ->
                 MaterialAlertDialogBuilder(requireContext())
-                    .setTitle("Delete Key")
-                    .setMessage("Delete key '${key.name}'? This cannot be undone.")
-                    .setPositiveButton("Delete") { _, _ ->
+                    .setTitle(getString(com.example.sshproxy.R.string.delete_key))
+                    .setMessage(getString(com.example.sshproxy.R.string.delete_key_confirmation_with_name, key.name))
+                    .setPositiveButton(getString(com.example.sshproxy.R.string.delete)) { _, _ ->
                         lifecycleScope.launch {
                             keyRepository.deleteKey(key.id)
                         }
                     }
-                    .setNegativeButton("Cancel", null)
+                    .setNegativeButton(getString(com.example.sshproxy.R.string.cancel), null)
                     .show()
             },
             onKeyCopy = { key ->
@@ -106,9 +106,9 @@ class KeysFragment : Fragment() {
 
     private fun copyKeyToClipboard(publicKey: String) {
         val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-        val clip = ClipData.newPlainText("SSH Public Key", publicKey)
+        val clip = ClipData.newPlainText(getString(com.example.sshproxy.R.string.public_key), publicKey)
         clipboard.setPrimaryClip(clip)
-        Toast.makeText(context, "Public key copied", Toast.LENGTH_SHORT).show()
+        Toast.makeText(context, getString(com.example.sshproxy.R.string.public_key_copied), Toast.LENGTH_SHORT).show()
     }
 
     override fun onDestroyView() {

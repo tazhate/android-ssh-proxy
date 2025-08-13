@@ -3,6 +3,7 @@ package com.example.sshproxy.ui.keys
 import android.app.Dialog
 import android.os.Bundle
 import androidx.fragment.app.DialogFragment
+import com.example.sshproxy.R
 import com.example.sshproxy.databinding.DialogAddKeyBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
@@ -14,15 +15,15 @@ class AddKeyDialog(
         val binding = DialogAddKeyBinding.inflate(layoutInflater)
         
         return MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Generate New Key")
+            .setTitle(getString(com.example.sshproxy.R.string.generate_new_key))
             .setView(binding.root)
-            .setPositiveButton("Generate") { _, _ ->
+            .setPositiveButton(getString(com.example.sshproxy.R.string.generate)) { _, _ ->
                 val name = binding.etKeyName.text.toString().trim()
                 if (name.isNotEmpty()) {
                     onSave(name)
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(com.example.sshproxy.R.string.cancel), null)
             .create()
     }
 }

@@ -30,7 +30,7 @@
         android:id="@+id/tvConnectionStatus"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:text="Disconnected"
+        android:text="@string/vpn_status_disconnected"
         android:textAppearance="?attr/textAppearanceBodyMedium"
         android:textColor="?attr/colorOnSurfaceVariant"
         app:layout_constraintTop_toBottomOf="@+id/btnConnect"
@@ -58,7 +58,7 @@
             <TextView
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Server"
+                android:text="@string/server"
                 android:textAppearance="?attr/textAppearanceBodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant"
                 android:layout_marginBottom="4dp" />
@@ -67,7 +67,7 @@
                 android:id="@+id/tvSelectedServer"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="No server selected"
+                android:text="@string/no_server_selected"
                 android:textAppearance="?attr/textAppearanceTitleMedium"
                 android:textColor="?attr/colorOnSurface"
                 android:padding="8dp"
@@ -87,7 +87,7 @@
         style="@style/Widget.Material3.Button.OutlinedButton"
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:text="Test Connection"
+        android:text="@string/test_connection"
         app:icon="@drawable/ic_network_check"
         app:iconGravity="start"
         app:layout_constraintTop_toBottomOf="@+id/cardServerSelection"
@@ -131,7 +131,7 @@
                 <TextView
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="External IP"
+                    android:text="@string/external_ip"
                     android:textAppearance="?attr/textAppearanceBodySmall"
                     android:textColor="?attr/colorOnSurfaceVariant"
                     android:layout_marginBottom="2dp" />
@@ -140,7 +140,7 @@
                     android:id="@+id/tvExternalIp"
                     android:layout_width="wrap_content"
                     android:layout_height="wrap_content"
-                    android:text="Checking..."
+                    android:text="@string/checking_ip"
                     android:textAppearance="?attr/textAppearanceTitleMedium"
                     android:textColor="?attr/colorOnSurface"
                     android:fontFamily="monospace" />
@@ -163,7 +163,7 @@
                 android:layout_height="40dp"
                 app:icon="@drawable/ic_refresh"
                 app:iconSize="20dp"
-                android:contentDescription="Refresh IP" />
+                android:contentDescription="@string/refresh_ip" />
 
         </LinearLayout>
 

@@ -11,6 +11,7 @@ import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
 import com.example.sshproxy.MainActivity
+import com.example.sshproxy.R
 import com.example.sshproxy.data.KeyRepository
 import com.example.sshproxy.data.SshKeyManager
 import com.example.sshproxy.databinding.FragmentKeyGenerationBinding
@@ -52,8 +53,8 @@ class KeyGenerationFragment : Fragment() {
                 publicKey = generatedKey.publicKey
                 binding.tvPublicKey.text = publicKey
             } catch (e: Exception) {
-                binding.tvPublicKey.text = "Error generating key: ${e.message}"
-                Toast.makeText(context, "Failed to generate SSH key", Toast.LENGTH_LONG).show()
+                binding.tvPublicKey.text = getString(com.example.sshproxy.R.string.error_generating_key_with_message, e.message)
+                Toast.makeText(context, getString(com.example.sshproxy.R.string.failed_to_generate_ssh_key), Toast.LENGTH_LONG).show()
             }
         }
     }
@@ -61,9 +62,9 @@ class KeyGenerationFragment : Fragment() {
     private fun copyPublicKey() {
         if (publicKey.isNotEmpty()) {
             val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-            val clip = ClipData.newPlainText("SSH Public Key", publicKey)
+            val clip = ClipData.newPlainText(getString(R.string.ssh_public_key), publicKey)
             clipboard.setPrimaryClip(clip)
-            Toast.makeText(context, "Public key copied to clipboard", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, getString(R.string.public_key_copied), Toast.LENGTH_SHORT).show()
         }
     }
     

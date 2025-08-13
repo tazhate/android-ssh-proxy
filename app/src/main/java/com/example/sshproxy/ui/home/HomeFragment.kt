@@ -1,10 +1,12 @@
 package com.example.sshproxy.ui.home
 
-import android.animation.ObjectAnimator
+
 import android.animation.ValueAnimator
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
@@ -51,7 +53,7 @@ class HomeFragment : Fragment() {
         if (result.resultCode == AppCompatActivity.RESULT_OK) {
             startVpnService()
         } else {
-            Toast.makeText(context, "VPN permission denied", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, getString(R.string.vpn_permission_denied), Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -98,14 +100,17 @@ class HomeFragment : Fragment() {
     private fun observeViewModel() {
         viewLifecycleOwner.lifecycleScope.launch {
             SshProxyService.connectionState.collectLatest { state ->
+                // Проверяем что binding еще валидный
+                if (_binding == null) return@collectLatest
+                
                 val isRunning = state == SshProxyService.ConnectionState.CONNECTED
                 binding.btnConnect.isSelected = isRunning
                 
                 binding.tvConnectionStatus.text = when (state) {
-                    SshProxyService.ConnectionState.DISCONNECTED -> "Disconnected"
-                    SshProxyService.ConnectionState.CONNECTING -> "Connecting..."
-                    SshProxyService.ConnectionState.CONNECTED -> "Connected"
-                    SshProxyService.ConnectionState.DISCONNECTING -> "Disconnecting..."
+                    SshProxyService.ConnectionState.DISCONNECTED -> getString(R.string.vpn_status_disconnected)
+                    SshProxyService.ConnectionState.CONNECTING -> getString(R.string.vpn_status_connecting)
+                    SshProxyService.ConnectionState.CONNECTED -> getString(R.string.vpn_status_connected)
+                    SshProxyService.ConnectionState.DISCONNECTING -> getString(R.string.vpn_status_disconnecting)
                 }
                 
                 // Управляем анимацией мигания
@@ -123,9 +128,11 @@ class HomeFragment : Fragment() {
                 
                 // Обновляем IP информацию при изменении состояния соединения
                 if (state == SshProxyService.ConnectionState.CONNECTED) {
-                    // Показываем что IP будет обновлен
-                    binding.tvCountryFlag.text = "⏳"
-                    binding.tvCountryName.text = "VPN connecting..."
+                    // Проверяем binding перед обновлением
+                    if (_binding != null) {
+                        binding.tvCountryFlag.text = "⏳"
+                        binding.tvCountryName.text = getString(R.string.vpn_connecting)
+                    }
                     
                     // Большая задержка для подключения чтобы VPN точно заработал
                     viewLifecycleOwner.lifecycleScope.launch {
@@ -133,9 +140,11 @@ class HomeFragment : Fragment() {
                         refreshIpInfo()
                     }
                 } else if (state == SshProxyService.ConnectionState.DISCONNECTED) {
-                    // Показываем что IP будет обновлен
-                    binding.tvCountryFlag.text = "⏳"
-                    binding.tvCountryName.text = "VPN disconnecting..."
+                    // Проверяем binding перед обновлением
+                    if (_binding != null) {
+                        binding.tvCountryFlag.text = "⏳"
+                        binding.tvCountryName.text = getString(R.string.vpn_disconnecting)
+                    }
                     
                     // Меньшая задержка для отключения
                     viewLifecycleOwner.lifecycleScope.launch {
@@ -148,7 +157,10 @@ class HomeFragment : Fragment() {
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.selectedServer.collectLatest { server ->
-                binding.tvSelectedServer.text = server?.name ?: "No server selected"
+                // Проверяем что binding еще валидный
+                if (_binding != null) {
+                    binding.tvSelectedServer.text = server?.name ?: getString(R.string.no_server_selected)
+                }
             }
         }
     }
@@ -156,7 +168,7 @@ class HomeFragment : Fragment() {
     private fun showServerSelector() {
         val servers = viewModel.servers.value
         if (servers.isEmpty()) {
-            Toast.makeText(context, "No servers configured", Toast.LENGTH_SHORT).show()
+            Toast.makeText(context, getString(R.string.no_servers_configured), Toast.LENGTH_SHORT).show()
             return
         }
 
@@ -164,7 +176,7 @@ class HomeFragment : Fragment() {
         val currentIndex = servers.indexOfFirst { it.id == viewModel.selectedServer.value?.id }.takeIf { it >= 0 } ?: 0
 
         MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Select Server")
+            .setTitle(getString(R.string.select_server))
             .setSingleChoiceItems(serverNames, currentIndex) { dialog, which ->
                 viewModel.selectServer(servers[which])
                 dialog.dismiss()
@@ -175,17 +187,17 @@ class HomeFragment : Fragment() {
     private fun checkAndConnect() {
         lifecycleScope.launch {
             if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
-                Toast.makeText(context, "Requires Android 10+", Toast.LENGTH_LONG).show()
+                Toast.makeText(context, getString(R.string.requires_android_10), Toast.LENGTH_LONG).show()
                 return@launch
             }
 
             if (!keyManager.hasKeyPair()) {
-                Toast.makeText(context, "No SSH key configured", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, getString(R.string.no_ssh_key_configured), Toast.LENGTH_SHORT).show()
                 return@launch
             }
 
             if (viewModel.selectedServer.value == null) {
-                Toast.makeText(context, "Please select a server", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, getString(R.string.please_select_a_server), Toast.LENGTH_SHORT).show()
                 return@launch
             }
 
@@ -216,9 +228,12 @@ class HomeFragment : Fragment() {
         requireContext().startService(intent)
     }
     
+    private val blinkingHandler = android.os.Handler(android.os.Looper.getMainLooper())
+
     private fun startBlinking() {
-        stopBlinking() // Останавливаем предыдущую анимацию
-        
+        blinkingHandler.removeCallbacksAndMessages(null)
+        if (blinkAnimator?.isRunning == true) return
+
         // Мигание через изменение цвета между серым и белым для максимального контраста
         val grayColor = ContextCompat.getColor(requireContext(), R.color.vpn_button_disconnected)
         val whiteColor = ContextCompat.getColor(requireContext(), android.R.color.white)
@@ -237,13 +252,22 @@ class HomeFragment : Fragment() {
     }
     
     private fun stopBlinking() {
-        blinkAnimator?.cancel()
-        blinkAnimator = null
-        binding.btnConnect.alpha = 1f
-        
-        // Возвращаем нормальный background
-        binding.btnConnect.backgroundTintList = null
-        binding.btnConnect.setBackgroundResource(R.drawable.vpn_button_background)
+        blinkingHandler.postDelayed({
+            // Check if binding is still valid before accessing it
+            if (_binding != null) {
+                blinkAnimator?.cancel()
+                blinkAnimator = null
+                binding.btnConnect.alpha = 1f
+                
+                // Возвращаем нормальный background
+                binding.btnConnect.backgroundTintList = null
+                binding.btnConnect.setBackgroundResource(R.drawable.vpn_button_background)
+            } else {
+                // Just cancel the animator if binding is null
+                blinkAnimator?.cancel()
+                blinkAnimator = null
+            }
+        }, 1000)
     }
     
     private fun testConnection() {
@@ -251,7 +275,7 @@ class HomeFragment : Fragment() {
             try {
                 // Устанавливаем состояние тестирования
                 binding.btnTest.isEnabled = false
-                binding.btnTest.text = "Testing..."
+                binding.btnTest.text = getString(R.string.testing_connection)
                 binding.btnTest.setIconTintResource(android.R.color.darker_gray)
                 
                 val isConnected = withContext(Dispatchers.IO) {
@@ -273,30 +297,30 @@ class HomeFragment : Fragment() {
                 
                 // Обновляем UI на основе результата
                 if (isConnected) {
-                    binding.btnTest.text = "Test Passed"
+                    binding.btnTest.text = getString(R.string.test_passed)
                     binding.btnTest.setIconTintResource(R.color.green_success)
-                    Toast.makeText(context, "Internet connection is working", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, getString(R.string.internet_connection_working), Toast.LENGTH_SHORT).show()
                 } else {
-                    binding.btnTest.text = "Test Failed"
+                    binding.btnTest.text = getString(R.string.test_failed)
                     binding.btnTest.setIconTintResource(R.color.red_error)
-                    Toast.makeText(context, "No internet connection", Toast.LENGTH_SHORT).show()
+                    Toast.makeText(context, getString(R.string.no_internet_connection), Toast.LENGTH_SHORT).show()
                 }
                 
                 // Возвращаем исходное состояние через 3 секунды
                 kotlinx.coroutines.delay(3000)
-                binding.btnTest.text = "Test Connection"
+                binding.btnTest.text = getString(R.string.test_connection)
                 binding.btnTest.setIconTintResource(R.color.icon_default)
                 binding.btnTest.isEnabled = true
                 
             } catch (e: Exception) {
                 // Обработка ошибок
-                binding.btnTest.text = "Test Failed"
+                binding.btnTest.text = getString(R.string.test_failed)
                 binding.btnTest.setIconTintResource(R.color.red_error)
                 binding.btnTest.isEnabled = true
-                Toast.makeText(context, "Test failed: ${e.message}", Toast.LENGTH_SHORT).show()
+                Toast.makeText(context, getString(R.string.test_failed_with_error, e.message), Toast.LENGTH_SHORT).show()
                 
                 kotlinx.coroutines.delay(3000)
-                binding.btnTest.text = "Test Connection"
+                binding.btnTest.text = getString(R.string.test_connection)
                 binding.btnTest.setIconTintResource(R.color.icon_default)
             }
         }
@@ -305,9 +329,12 @@ class HomeFragment : Fragment() {
     private fun refreshIpInfo(retryCount: Int = 0) {
         viewLifecycleOwner.lifecycleScope.launch {
             try {
+                // Проверяем что binding еще валидный перед каждым обращением
+                if (_binding == null) return@launch
+                
                 // Показываем состояние загрузки только при первой попытке
                 if (retryCount == 0) {
-                    binding.tvExternalIp.text = "Checking..."
+                    binding.tvExternalIp.text = getString(R.string.checking_ip)
                     binding.tvCountryName.text = ""
                     binding.tvCountryFlag.text = "🔄"
                     binding.btnRefreshIp.isEnabled = false
@@ -315,6 +342,10 @@ class HomeFragment : Fragment() {
                 
                 // Пытаемся получить полную информацию
                 val ipLocation = IpLocationService.getIpLocation()
+                
+                // Проверяем binding перед обновлением UI
+                if (_binding == null) return@launch
+                
                 if (ipLocation != null) {
                     binding.tvExternalIp.text = ipLocation.ip
                     binding.tvCountryName.text = ipLocation.country
@@ -322,9 +353,13 @@ class HomeFragment : Fragment() {
                 } else {
                     // Fallback: получаем только IP
                     val simpleIp = IpLocationService.getSimpleIp()
+                    
+                    // Снова проверяем binding
+                    if (_binding == null) return@launch
+                    
                     if (simpleIp != null) {
                         binding.tvExternalIp.text = simpleIp
-                        binding.tvCountryName.text = "Unknown location"
+                        binding.tvCountryName.text = getString(R.string.unknown_location)
                         binding.tvCountryFlag.text = "🌍"
                     } else if (retryCount < 2) {
                         // Повторяем через 2 секунды максимум 2 раза
@@ -333,31 +368,40 @@ class HomeFragment : Fragment() {
                         return@launch
                     } else {
                         // Полная неудача после повторов
-                        binding.tvExternalIp.text = "Unable to fetch"
-                        binding.tvCountryName.text = "Check network connection"
+                        binding.tvExternalIp.text = getString(R.string.unable_to_fetch_ip)
+                        binding.tvCountryName.text = getString(R.string.check_network_connection)
                         binding.tvCountryFlag.text = "❌"
                     }
                 }
             } catch (e: Exception) {
+                // Проверяем binding перед обработкой ошибки
+                if (_binding == null) return@launch
+                
                 if (retryCount < 2) {
                     // Повторяем при ошибке
                     kotlinx.coroutines.delay(2000)
                     refreshIpInfo(retryCount + 1)
                     return@launch
                 } else {
-                    binding.tvExternalIp.text = "Error"
-                    binding.tvCountryName.text = "Network error"
+                    binding.tvExternalIp.text = getString(R.string.network_error)
+                    binding.tvCountryName.text = getString(R.string.network_error)
                     binding.tvCountryFlag.text = "❌"
                 }
             } finally {
-                binding.btnRefreshIp.isEnabled = true
+                // Финальная проверка binding
+                if (_binding != null) {
+                    binding.btnRefreshIp.isEnabled = true
+                }
             }
         }
     }
     
     override fun onDestroyView() {
         super.onDestroyView()
-        stopBlinking()
+        // Cancel any pending callbacks and animations before destroying the view
+        blinkingHandler.removeCallbacksAndMessages(null)
+        blinkAnimator?.cancel()
+        blinkAnimator = null
         _binding = null
     }
 }

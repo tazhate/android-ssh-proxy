@@ -24,9 +24,10 @@ class AddServerDialog(
     private var keys: List<SshKey> = emptyList()
     private lateinit var keyRepository: KeyRepository
     private lateinit var preferencesManager: PreferencesManager
+    private lateinit var binding: DialogAddServerBinding
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
-        val binding = DialogAddServerBinding.inflate(layoutInflater)
+        binding = DialogAddServerBinding.inflate(layoutInflater)
         
         // Initialize repositories
         keyRepository = KeyRepository(requireContext())
@@ -35,11 +36,11 @@ class AddServerDialog(
         // Setup initial values
         server?.let {
             binding.etHost.setText(it.host)
-            binding.etName.setText(it.name)
-            binding.etUser.setText(it.username)
+            binding.etServerName.setText(it.name)
+            binding.etUsername.setText(it.username)
             binding.etPort.setText(it.port.toString())
         } ?: run {
-            binding.etUser.setText("user")
+            binding.etUsername.setText("user")
             binding.etPort.setText("22")
         }
         
@@ -63,8 +64,8 @@ class AddServerDialog(
                 }
                 
                 // Auto-fill name only if it's empty
-                if (binding.etName.text.isNullOrEmpty()) {
-                    binding.etName.setText(cleanHost)
+                if (binding.etServerName.text.isNullOrEmpty()) {
+                    binding.etServerName.setText(cleanHost)
                 }
             }
         }
@@ -79,30 +80,33 @@ class AddServerDialog(
             )
         }
         
+        val title = if (server == null) getString(com.example.sshproxy.R.string.add_server) else getString(com.example.sshproxy.R.string.edit_server)
+
         return MaterialAlertDialogBuilder(requireContext())
-            .setTitle(if (server == null) "Add Server" else "Edit Server")
+            .setTitle(title)
             .setView(binding.root)
-            .setPositiveButton("Save") { _, _ ->
-                val rawHost = binding.etHost.text.toString().trim()
-                val cleanHost = cleanUrl(rawHost)
-                val nameText = binding.etName.text?.toString()?.trim()
-                val name = if (!nameText.isNullOrEmpty()) nameText else cleanHost
-                val user = binding.etUser.text?.toString()?.trim() ?: "user"
-                val port = binding.etPort.text?.toString()?.toIntOrNull() ?: 22
-                
-                if (cleanHost.isNotEmpty()) {
-                    val newServer = Server(
-                        id = server?.id ?: 0L,
+            .setPositiveButton(getString(com.example.sshproxy.R.string.save)) { _, _ ->
+                val name = binding.etServerName.text.toString().trim()
+                val host = binding.etHost.text.toString().trim()
+                val port = binding.etPort.text.toString().toIntOrNull() ?: 22
+                val username = binding.etUsername.text.toString().trim()
+
+                if (name.isNotEmpty() && host.isNotEmpty() && username.isNotEmpty()) {
+                    val newServer = server?.copy(
                         name = name,
-                        host = cleanHost,
+                        host = host,
                         port = port,
-                        username = user,
-                        sshKeyId = selectedKey?.id
+                        username = username
+                    ) ?: Server(
+                        name = name,
+                        host = host,
+                        port = port,
+                        username = username
                     )
                     onSave(newServer)
                 }
             }
-            .setNegativeButton("Cancel", null)
+            .setNegativeButton(getString(com.example.sshproxy.R.string.cancel), null)
             .create()
     }
     
@@ -124,14 +128,6 @@ class AddServerDialog(
         }
     }
     
-    private fun updateKeyDisplay(binding: DialogAddServerBinding) {
-        binding.tvSelectedKey.text = if (selectedKey != null) {
-            selectedKey!!.name
-        } else {
-            "Use active key"
-        }
-    }
-    
     private fun showSshKeySelectionDialog() {
         val keyNames = arrayOf("Use active key") + keys.map { it.name }.toTypedArray()
         val currentSelection = if (selectedKey != null) {
@@ -145,11 +141,18 @@ class AddServerDialog(
             .setSingleChoiceItems(keyNames, currentSelection) { dialog, which ->
                 selectedKey = if (which == 0) null else keys[which - 1]
                 dialog.dismiss()
-                val binding = DialogAddServerBinding.bind(requireDialog().findViewById(android.R.id.content))
                 updateKeyDisplay(binding)
             }
             .setNegativeButton("Cancel", null)
             .show()
+    }
+    
+    private fun updateKeyDisplay(binding: DialogAddServerBinding) {
+        binding.tvSelectedKey.text = if (selectedKey != null) {
+            selectedKey!!.name
+        } else {
+            "Use active key"
+        }
     }
     
     private fun cleanUrl(input: String): String {

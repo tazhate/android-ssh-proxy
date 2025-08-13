@@ -20,11 +20,11 @@ class KeyChoiceFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         
-        binding.btnGenerateKey.setOnClickListener {
+        binding.btnGenerate.setOnClickListener {
             (activity as? MainActivity)?.navigateToKeyGeneration()
         }
         
-        binding.btnImportKey.setOnClickListener {
+        binding.btnImport.setOnClickListener {
             (activity as? MainActivity)?.navigateToKeyImport()
         }
     }
