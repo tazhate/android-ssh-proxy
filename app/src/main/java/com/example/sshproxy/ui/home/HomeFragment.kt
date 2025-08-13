@@ -1,6 +1,7 @@
 package com.example.sshproxy.ui.home
 
 import android.animation.ObjectAnimator
+import android.animation.ValueAnimator
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
@@ -11,12 +12,14 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import com.example.sshproxy.R
 import com.example.sshproxy.SshProxyService
 import com.example.sshproxy.data.KeyRepository
+import com.example.sshproxy.data.IpLocationService
 import com.example.sshproxy.data.PreferencesManager
 import com.example.sshproxy.data.ServerRepository
 import com.example.sshproxy.data.SshKeyManager
@@ -40,7 +43,7 @@ class HomeFragment : Fragment() {
         )
     }
     private lateinit var keyManager: SshKeyManager
-    private var blinkAnimator: ObjectAnimator? = null
+    private var blinkAnimator: ValueAnimator? = null
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -82,6 +85,14 @@ class HomeFragment : Fragment() {
         binding.btnTest.setOnClickListener {
             testConnection()
         }
+        
+        binding.btnRefreshIp.setOnClickListener {
+            refreshIpInfo()
+        }
+        
+        // Показываем IP карточку и загружаем информацию
+        binding.cardExternalIp.visibility = View.VISIBLE
+        refreshIpInfo()
     }
 
     private fun observeViewModel() {
@@ -98,7 +109,7 @@ class HomeFragment : Fragment() {
                 }
                 
                 // Управляем анимацией мигания
-                if (state == SshProxyService.ConnectionState.CONNECTING) {
+                if (state == SshProxyService.ConnectionState.CONNECTING || state == SshProxyService.ConnectionState.DISCONNECTING) {
                     startBlinking()
                 } else {
                     stopBlinking()
@@ -108,6 +119,29 @@ class HomeFragment : Fragment() {
                     binding.btnConnect.setIconResource(R.drawable.ic_stop)
                 } else {
                     binding.btnConnect.setIconResource(R.drawable.ic_power)
+                }
+                
+                // Обновляем IP информацию при изменении состояния соединения
+                if (state == SshProxyService.ConnectionState.CONNECTED) {
+                    // Показываем что IP будет обновлен
+                    binding.tvCountryFlag.text = "⏳"
+                    binding.tvCountryName.text = "VPN connecting..."
+                    
+                    // Большая задержка для подключения чтобы VPN точно заработал
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        kotlinx.coroutines.delay(5000)
+                        refreshIpInfo()
+                    }
+                } else if (state == SshProxyService.ConnectionState.DISCONNECTED) {
+                    // Показываем что IP будет обновлен
+                    binding.tvCountryFlag.text = "⏳"
+                    binding.tvCountryName.text = "VPN disconnecting..."
+                    
+                    // Меньшая задержка для отключения
+                    viewLifecycleOwner.lifecycleScope.launch {
+                        kotlinx.coroutines.delay(3000) 
+                        refreshIpInfo()
+                    }
                 }
             }
         }
@@ -185,10 +219,19 @@ class HomeFragment : Fragment() {
     private fun startBlinking() {
         stopBlinking() // Останавливаем предыдущую анимацию
         
-        blinkAnimator = ObjectAnimator.ofFloat(binding.tvConnectionStatus, "alpha", 1f, 0.3f).apply {
-            duration = 800
-            repeatCount = ObjectAnimator.INFINITE
-            repeatMode = ObjectAnimator.REVERSE
+        // Мигание через изменение цвета между серым и белым для максимального контраста
+        val grayColor = ContextCompat.getColor(requireContext(), R.color.vpn_button_disconnected)
+        val whiteColor = ContextCompat.getColor(requireContext(), android.R.color.white)
+        
+        blinkAnimator = ValueAnimator.ofArgb(grayColor, whiteColor).apply {
+            duration = 400  // Быстрее для более заметного мигания
+            repeatCount = ValueAnimator.INFINITE
+            repeatMode = ValueAnimator.REVERSE
+            addUpdateListener { animator ->
+                val color = animator.animatedValue as Int
+                binding.btnConnect.backgroundTintList = ContextCompat.getColorStateList(requireContext(), android.R.color.transparent)
+                binding.btnConnect.setBackgroundColor(color)
+            }
             start()
         }
     }
@@ -196,7 +239,11 @@ class HomeFragment : Fragment() {
     private fun stopBlinking() {
         blinkAnimator?.cancel()
         blinkAnimator = null
-        binding.tvConnectionStatus.alpha = 1f
+        binding.btnConnect.alpha = 1f
+        
+        // Возвращаем нормальный background
+        binding.btnConnect.backgroundTintList = null
+        binding.btnConnect.setBackgroundResource(R.drawable.vpn_button_background)
     }
     
     private fun testConnection() {
@@ -255,6 +302,59 @@ class HomeFragment : Fragment() {
         }
     }
 
+    private fun refreshIpInfo(retryCount: Int = 0) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                // Показываем состояние загрузки только при первой попытке
+                if (retryCount == 0) {
+                    binding.tvExternalIp.text = "Checking..."
+                    binding.tvCountryName.text = ""
+                    binding.tvCountryFlag.text = "🔄"
+                    binding.btnRefreshIp.isEnabled = false
+                }
+                
+                // Пытаемся получить полную информацию
+                val ipLocation = IpLocationService.getIpLocation()
+                if (ipLocation != null) {
+                    binding.tvExternalIp.text = ipLocation.ip
+                    binding.tvCountryName.text = ipLocation.country
+                    binding.tvCountryFlag.text = ipLocation.flag
+                } else {
+                    // Fallback: получаем только IP
+                    val simpleIp = IpLocationService.getSimpleIp()
+                    if (simpleIp != null) {
+                        binding.tvExternalIp.text = simpleIp
+                        binding.tvCountryName.text = "Unknown location"
+                        binding.tvCountryFlag.text = "🌍"
+                    } else if (retryCount < 2) {
+                        // Повторяем через 2 секунды максимум 2 раза
+                        kotlinx.coroutines.delay(2000)
+                        refreshIpInfo(retryCount + 1)
+                        return@launch
+                    } else {
+                        // Полная неудача после повторов
+                        binding.tvExternalIp.text = "Unable to fetch"
+                        binding.tvCountryName.text = "Check network connection"
+                        binding.tvCountryFlag.text = "❌"
+                    }
+                }
+            } catch (e: Exception) {
+                if (retryCount < 2) {
+                    // Повторяем при ошибке
+                    kotlinx.coroutines.delay(2000)
+                    refreshIpInfo(retryCount + 1)
+                    return@launch
+                } else {
+                    binding.tvExternalIp.text = "Error"
+                    binding.tvCountryName.text = "Network error"
+                    binding.tvCountryFlag.text = "❌"
+                }
+            } finally {
+                binding.btnRefreshIp.isEnabled = true
+            }
+        }
+    }
+    
     override fun onDestroyView() {
         super.onDestroyView()
         stopBlinking()

@@ -16,4 +16,9 @@
     <color name="green_success">#4CAF50</color>
     <color name="red_error">#F44336</color>
     <color name="icon_default">#666666</color>
+    
+    <!-- VPN button colors -->
+    <color name="vpn_button_disconnected">#757575</color>  <!-- Gray -->
+    <color name="vpn_button_connected">#00BFA5</color>     <!-- Mint green -->
+    <color name="vpn_button_connecting">#FFC107</color>    <!-- Bright amber yellow -->
 </resources>

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Connected state -->
+    <item android:state_selected="true">
+        <shape android:shape="oval">
+            <solid android:color="@color/vpn_button_connected" />
+        </shape>
+    </item>
+    
+    <!-- Disconnected state (default) -->
+    <item>
+        <shape android:shape="oval">
+            <solid android:color="@color/vpn_button_disconnected" />
+        </shape>
+    </item>
+</selector>

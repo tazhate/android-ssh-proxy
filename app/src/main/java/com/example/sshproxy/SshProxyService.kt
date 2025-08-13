@@ -676,6 +676,11 @@ class SshProxyService : VpnService() {
                     isVpnRecreating = true
                     
                     try {
+                        // Уведомляем UI о начале переподключения
+                        _connectionState.value = ConnectionState.CONNECTING
+                        _isRunning.value = false
+                        updateNotification("Reconnecting...")
+                        
                         // Отключаем VPN
                         if (vpnInterface != null) {
                             AppLog.log("Disabling VPN for network type change")
@@ -738,13 +743,36 @@ class SshProxyService : VpnService() {
                             if (isSSHAlive) {
                                 updateActiveNetworks()
                                 setupVpn()
+                                
+                                // SSH живой, просто переустановили VPN
+                                _connectionState.value = ConnectionState.CONNECTED
+                                _isRunning.value = true
+                                updateNotification("Connected")
                             } else {
                                 AppLog.log("Reconnecting SSH after network change")
-                                reconnectSsh(currentServerId)
+                                val reconnected = reconnectSsh(currentServerId)
+                                if (reconnected) {
+                                    AppLog.log("SSH reconnected successfully, setting up VPN")
+                                    updateActiveNetworks()
+                                    setupVpn()
+                                    
+                                    // Обновляем состояние UI
+                                    _connectionState.value = ConnectionState.CONNECTED
+                                    _isRunning.value = true
+                                    updateNotification("Connected")
+                                } else {
+                                    AppLog.log("SSH reconnection failed")
+                                    _connectionState.value = ConnectionState.DISCONNECTED
+                                    _isRunning.value = false
+                                    updateNotification("Connection failed")
+                                }
                             }
                         } else {
                             AppLog.log("No suitable network found after 5 attempts")
                             isVpnTemporarilyDisabled = true
+                            _connectionState.value = ConnectionState.DISCONNECTED
+                            _isRunning.value = false
+                            updateNotification("No network available")
                         }
                     } finally {
                         isVpnRecreating = false
