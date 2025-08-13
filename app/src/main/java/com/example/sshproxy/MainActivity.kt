@@ -126,9 +126,6 @@ class MainActivity : AppCompatActivity() {
         loadFragment(KeyGenerationFragment())
     }
     
-    fun navigateToKeyImport() {
-        loadFragment(KeyImportFragment())
-    }
     
     fun navigateToAddServer() {
         loadFragment(AddFirstServerFragment())

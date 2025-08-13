@@ -23,10 +23,6 @@ class KeyChoiceFragment : Fragment() {
         binding.btnGenerate.setOnClickListener {
             (activity as? MainActivity)?.navigateToKeyGeneration()
         }
-        
-        binding.btnImport.setOnClickListener {
-            (activity as? MainActivity)?.navigateToKeyImport()
-        }
     }
 
     override fun onDestroyView() {

@@ -157,7 +157,7 @@
     <string name="setup_wizard_description">Этот мастер поможет вам настроить ваш первый сервер и ключ.</string>
     <string name="get_started">Начать</string>
     <string name="key_setup">Настройка ключа</string>
-    <string name="key_setup_description">Сначала вам нужно настроить ключ SSH. Вы можете либо создать новый, либо импортировать существующий.</string>
+    <string name="key_setup_description">Сначала вам нужно настроить ключ SSH. Мы создадим безопасный ключ для вас.</string>
     <string name="add_first_server">Добавить первый сервер</string>
     <string name="server_setup_description">Теперь давайте добавим сервер для подключения.</string>
     <string name="setup_complete">Настройка завершена</string>

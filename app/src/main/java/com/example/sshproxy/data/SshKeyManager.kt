@@ -3,6 +3,7 @@ package com.example.sshproxy.data
 import android.content.Context
 import android.util.Base64
 import android.util.Log
+import com.example.sshproxy.security.KeystoreManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withContext
@@ -13,7 +14,7 @@ import org.bouncycastle.util.io.pem.PemWriter
 import java.io.ByteArrayOutputStream
 import java.io.DataOutputStream
 import java.io.File
-import java.io.FileWriter
+import java.io.StringWriter
 import java.math.BigInteger
 import java.security.*
 import java.security.interfaces.ECPublicKey
@@ -22,6 +23,7 @@ import java.security.interfaces.RSAPublicKey
 import java.security.spec.AlgorithmParameterSpec
 import java.security.spec.ECGenParameterSpec
 import java.security.spec.NamedParameterSpec
+import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
 import java.util.*
 
@@ -35,7 +37,8 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
 
     companion object {
         private const val TAG = "SshKeyManager"
-        private const val PRIVATE_KEY_PREFIX = "ssh_private_"
+        private const val PRIVATE_KEY_PREFIX = "ssh_private_encrypted_"
+        private const val IV_PREFIX = "ssh_iv_"
         private const val PUBLIC_KEY_PREFIX = "ssh_public_"
         val DEFAULT_KEY_TYPE = KeyType.ECDSA_256
 
@@ -45,9 +48,12 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
         }
     }
 
+    private val keystoreManager = KeystoreManager()
+
     suspend fun hasKeyPair(): Boolean = withContext(Dispatchers.IO) {
         keyRepository.getAllKeys().first().isNotEmpty()
     }
+
 
     suspend fun generateKeyPair(name: String, keyType: KeyType = DEFAULT_KEY_TYPE): SshKey = withContext(Dispatchers.IO) {
         try {
@@ -81,13 +87,27 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
     }
 
     private fun saveKeyPair(keyPair: KeyPair, keyId: String) {
+        // Save private key encrypted using Android Keystore
+        val privateKeyPem = convertPrivateKeyToPem(keyPair.private)
+        val encryptedData = keystoreManager.encryptPrivateKey(keyId, privateKeyPem.toByteArray())
+        
         val privateKeyFile = File(context.filesDir, "$PRIVATE_KEY_PREFIX$keyId")
-        PemWriter(FileWriter(privateKeyFile)).use { pemWriter ->
-            pemWriter.writeObject(PemObject("PRIVATE KEY", keyPair.private.encoded))
-        }
+        privateKeyFile.writeBytes(encryptedData.ciphertext)
+        
+        val ivFile = File(context.filesDir, "$IV_PREFIX$keyId")
+        ivFile.writeBytes(encryptedData.iv)
 
+        // Save public key unencrypted (it's public anyway)
         val publicKeyFile = File(context.filesDir, "$PUBLIC_KEY_PREFIX$keyId")
         publicKeyFile.writeBytes(keyPair.public.encoded)
+    }
+
+    private fun convertPrivateKeyToPem(privateKey: PrivateKey): String {
+        val stringWriter = StringWriter()
+        PemWriter(stringWriter).use { pemWriter ->
+            pemWriter.writeObject(PemObject("PRIVATE KEY", privateKey.encoded))
+        }
+        return stringWriter.toString()
     }
 
     suspend fun getPublicKey(keyId: String): String? = withContext(Dispatchers.IO) {
@@ -195,9 +215,63 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
         return File(context.filesDir, "$PRIVATE_KEY_PREFIX$keyId")
     }
 
+    /**
+     * Get decrypted private key for SSH operations
+     * @param keyId SSH key identifier
+     * @return PrivateKey object for SSH connections
+     */
+    suspend fun getPrivateKey(keyId: String): PrivateKey? = withContext(Dispatchers.IO) {
+        try {
+            val key = keyRepository.getKeyById(keyId) ?: return@withContext null
+            
+            val privateKeyFile = File(context.filesDir, "$PRIVATE_KEY_PREFIX$keyId")
+            val ivFile = File(context.filesDir, "$IV_PREFIX$keyId")
+            
+            if (!privateKeyFile.exists() || !ivFile.exists()) {
+                Log.e(TAG, "Private key or IV file not found for keyId: $keyId")
+                return@withContext null
+            }
+            
+            val ciphertext = privateKeyFile.readBytes()
+            val iv = ivFile.readBytes()
+            val encryptedData = KeystoreManager.EncryptedData(ciphertext, iv)
+            
+            val decryptedPem = keystoreManager.decryptPrivateKey(keyId, encryptedData)
+            val pemString = String(decryptedPem)
+            
+            // Parse PEM to get PrivateKey object
+            return@withContext parsePemToPrivateKey(pemString, key.keyType)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to decrypt private key for keyId: $keyId", e)
+            null
+        }
+    }
+
+    private fun parsePemToPrivateKey(pemString: String, keyType: KeyType): PrivateKey? {
+        try {
+            // Extract base64 content from PEM
+            val base64Content = pemString
+                .replace("-----BEGIN PRIVATE KEY-----", "")
+                .replace("-----END PRIVATE KEY-----", "")
+                .replace("\n", "")
+                .replace("\r", "")
+            
+            val keyBytes = Base64.decode(base64Content, Base64.DEFAULT)
+            val keySpec = PKCS8EncodedKeySpec(keyBytes)
+            val keyFactory = KeyFactory.getInstance(keyType.algorithm)
+            return keyFactory.generatePrivate(keySpec)
+        } catch (e: Exception) {
+            Log.e(TAG, "Failed to parse PEM to private key", e)
+            return null
+        }
+    }
+
     fun deleteKeyFiles(keyId: String) {
         File(context.filesDir, "$PRIVATE_KEY_PREFIX$keyId").delete()
+        File(context.filesDir, "$IV_PREFIX$keyId").delete()
         File(context.filesDir, "$PUBLIC_KEY_PREFIX$keyId").delete()
+        // Also delete the encryption key from Android Keystore
+        keystoreManager.deleteEncryptionKey(keyId)
     }
 
     private fun buildSshPublicKey(key: PublicKey): ByteArray {

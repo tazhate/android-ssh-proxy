@@ -161,7 +161,7 @@
     <string name="setup_wizard_description">This wizard will guide you through the process of setting up your first server and key.</string>
     <string name="get_started">Get Started</string>
     <string name="key_setup">Key Setup</string>
-    <string name="key_setup_description">First, you need to set up an SSH key. You can either generate a new one or import an existing one.</string>
+    <string name="key_setup_description">First, you need to set up an SSH key. We will generate a secure key for you.</string>
     <string name="add_first_server">Add First Server</string>
     <string name="server_setup_description">Now, lets add a server to connect to.</string>
     <string name="setup_complete">Setup Complete</string>

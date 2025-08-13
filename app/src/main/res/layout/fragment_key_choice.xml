@@ -36,12 +36,6 @@
             android:text="@string/generate_new_key"
             android:layout_marginTop="48dp" />
 
-        <Button
-            android:id="@+id/btnImport"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/import_key"
-            android:layout_marginTop="16dp" />
 
     </LinearLayout>
 </ScrollView>

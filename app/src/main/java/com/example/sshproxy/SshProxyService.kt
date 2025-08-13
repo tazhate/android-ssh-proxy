@@ -474,37 +474,57 @@ class SshProxyService : VpnService() {
         stopSelf()
     }
 
-    private fun resolvePrivateKeyFile(serverSshKeyId: String? = null): File? {
-        // Используем ключ сервера, если указан, иначе активный ключ
-        val keyId = serverSshKeyId ?: preferencesManager.getActiveKeyId()
-        AppLog.log("Using SSH key ID: $keyId ${if (serverSshKeyId != null) "(server-specific)" else "(active)"}")
-        
-        if (keyId != null) {
-            val keyRepository = KeyRepository(this)
-            val keyManager = SshKeyManager(this, keyRepository)
-            val keyFile = keyManager.getPrivateKeyFile(keyId)
+    private suspend fun resolvePrivateKeyFile(serverSshKeyId: String? = null): File? {
+        return withContext(Dispatchers.IO) {
+            // Используем ключ сервера, если указан, иначе активный ключ
+            val keyId = serverSshKeyId ?: preferencesManager.getActiveKeyId()
+            AppLog.log("Using SSH key ID: $keyId ${if (serverSshKeyId != null) "(server-specific)" else "(active)"}")
             
-            AppLog.log("Key file path: ${keyFile.absolutePath}")
-            AppLog.log("Key file exists: ${keyFile.exists()}")
-            AppLog.log("Key file size: ${if (keyFile.exists()) keyFile.length() else 0} bytes")
-            AppLog.log("Key file readable: ${keyFile.canRead()}")
-            
-            if (keyFile.exists()) {
-                Log.d(TAG, "Using SSH key: $keyId")
-                AppLog.log("Found SSH key: $keyId")
-                return keyFile
+            if (keyId != null) {
+                try {
+                    val keyRepository = KeyRepository(this@SshProxyService)
+                    
+                    // Get decrypted private key content
+                    val privateKey = keyRepository.getPrivateKey(keyId)
+                    if (privateKey != null) {
+                        // Create temporary PEM file with decrypted content
+                        val tempFile = File.createTempFile("ssh_key_$keyId", ".pem", cacheDir)
+                        tempFile.deleteOnExit()
+                        
+                        // Convert PrivateKey to PEM format and write to temp file
+                        val pemContent = convertPrivateKeyToPem(privateKey)
+                        tempFile.writeText(pemContent)
+                        
+                        AppLog.log("Created temporary decrypted key file: ${tempFile.absolutePath}")
+                        AppLog.log("Temp key file size: ${tempFile.length()} bytes")
+                        AppLog.log("Found SSH key: $keyId")
+                        
+                        return@withContext tempFile
+                    } else {
+                        Log.e(TAG, "Failed to decrypt private key for ID $keyId")
+                        AppLog.log("Error: Failed to decrypt private key for ID $keyId")
+                    }
+                } catch (e: Exception) {
+                    Log.e(TAG, "Error resolving private key: ${e.message}", e)
+                    AppLog.log("Error resolving private key: ${e.message}")
+                }
             } else {
-                Log.w(TAG, "SSH key file for ID $keyId not found.")
-                AppLog.log("Warning: SSH key file for ID $keyId not found.")
+                Log.w(TAG, "No SSH key ID specified.")
+                AppLog.log("Warning: No SSH key specified.")
             }
-        } else {
-            Log.w(TAG, "No SSH key ID specified.")
-            AppLog.log("Warning: No SSH key specified.")
+            
+            Log.e(TAG, "No private key file found.")
+            AppLog.log("Error: No private key file found.")
+            return@withContext null
         }
-        
-        Log.e(TAG, "No private key file found.")
-        AppLog.log("Error: No private key file found.")
-        return null
+    }
+
+    private fun convertPrivateKeyToPem(privateKey: java.security.PrivateKey): String {
+        val stringWriter = java.io.StringWriter()
+        org.bouncycastle.util.io.pem.PemWriter(stringWriter).use { pemWriter ->
+            pemWriter.writeObject(org.bouncycastle.util.io.pem.PemObject("PRIVATE KEY", privateKey.encoded))
+        }
+        return stringWriter.toString()
     }
     
     private fun startNetworkMonitoring() {

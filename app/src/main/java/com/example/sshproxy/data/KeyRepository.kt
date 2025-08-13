@@ -4,6 +4,7 @@ import android.content.Context
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.withContext
+import java.security.PrivateKey
 
 class KeyRepository(private val context: Context) {
     private val database = ServerDatabase.getDatabase(context)
@@ -33,6 +34,17 @@ class KeyRepository(private val context: Context) {
         withContext(Dispatchers.IO) {
             keyDao.deleteKey(id)
             SshKeyManager(context, this@KeyRepository).deleteKeyFiles(id)
+        }
+    }
+
+    /**
+     * Get decrypted private key for SSH operations
+     * @param id SSH key identifier
+     * @return PrivateKey object for SSH connections, null if not found or decryption failed
+     */
+    suspend fun getPrivateKey(id: String): PrivateKey? {
+        return withContext(Dispatchers.IO) {
+            SshKeyManager(context, this@KeyRepository).getPrivateKey(id)
         }
     }
 }
