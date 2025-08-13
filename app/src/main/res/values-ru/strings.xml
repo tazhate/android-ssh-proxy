@@ -163,4 +163,17 @@
     <string name="setup_complete">Настройка завершена</string>
     <string name="setup_complete_description">Все готово к работе!</string>
     <string name="finish">Завершить</string>
+
+    <!-- Host Key Validation -->
+    <string name="security_warning">Предупреждение безопасности</string>
+    <string name="host_key_changed_message">SSH ключ хоста %1$s изменился!</string>
+    <string name="stored_fingerprint">Сохраненный отпечаток:</string>
+    <string name="received_fingerprint">Полученный отпечаток:</string>
+    <string name="host_key_change_warning">Это может указывать на атаку типа \"человек посередине\" или на то, что сервер был перенастроен. Продолжайте только если доверяете этому изменению.</string>
+    <string name="accept_and_continue">Принять и продолжить</string>
+    <string name="reject_connection">Отклонить соединение</string>
+    <string name="security_alerts_channel">Предупреждения безопасности</string>
+    <string name="security_alerts_channel_description">Критические предупреждения и оповещения безопасности</string>
+    <string name="host_key_changed_notification">SSH ключ сервера %1$s изменился!</string>
+    <string name="host_key_changed_notification_detail">SSH ключ хоста %1$s изменился. Это может указывать на проблему безопасности. Нажмите для проверки.</string>
 </resources>

@@ -9,6 +9,8 @@ import com.example.sshproxy.ui.keys.KeysFragment
 import com.example.sshproxy.ui.servers.ServersFragment
 import com.example.sshproxy.ui.settings.SettingsFragment
 import com.example.sshproxy.ui.setup.*
+import com.example.sshproxy.ui.dialogs.HostKeyChangeDialog
+import com.example.sshproxy.security.SecurityNotificationManager
 import com.google.android.material.navigation.NavigationBarView
 
 import com.example.sshproxy.data.PreferencesManager
@@ -36,6 +38,9 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupManager = SetupManager(this)
+        
+        // Handle security alerts from notifications
+        handleSecurityIntent()
         
         // Check if first launch
         if (setupManager.isFirstLaunch()) {
@@ -148,5 +153,21 @@ class MainActivity : AppCompatActivity() {
 
     fun navigateToHome() {
         setupNavigation()
+    }
+
+    private fun handleSecurityIntent() {
+        val showSecurityAlert = intent.getBooleanExtra("show_security_alert", false)
+        if (showSecurityAlert) {
+            val hostname = intent.getStringExtra("hostname") ?: return
+            val port = intent.getIntExtra("port", 22)
+            
+            // Clear the security notification since user opened the app
+            SecurityNotificationManager(this).clearSecurityNotifications()
+            
+            // Show the host key change dialog
+            // For now, we'll just log it since we need the actual fingerprints
+            android.util.Log.d("MainActivity", "Host key change detected for $hostname:$port")
+            // TODO: Get actual fingerprints and show HostKeyChangeDialog
+        }
     }
 }

@@ -38,6 +38,18 @@
                 android:layout_height="wrap_content"
                 android:textAppearance="?attr/textAppearanceBodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant" />
+
+            <TextView
+                android:id="@+id/tvServerFingerprint"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorTertiary"
+                android:drawableStart="@android:drawable/ic_partial_secure"
+                android:drawablePadding="4dp"
+                android:layout_marginTop="1dp"
+                android:gravity="center_vertical"
+                android:fontFamily="monospace" />
                 
             <TextView
                 android:id="@+id/tvSshKey"

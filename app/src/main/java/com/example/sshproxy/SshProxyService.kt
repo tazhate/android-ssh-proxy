@@ -18,6 +18,8 @@ import com.example.sshproxy.data.KeyRepository
 import com.example.sshproxy.data.PreferencesManager
 import com.example.sshproxy.data.ServerRepository
 import com.example.sshproxy.data.SshKeyManager
+import com.example.sshproxy.security.SecureHostKeyVerifier
+import com.example.sshproxy.security.SecurityNotificationManager
 import com.example.sshproxy.service.ConnectionHealthMonitor
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -73,6 +75,8 @@ class SshProxyService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var connectionJob: Job? = null
     private var serverSocket: ServerSocket? = null
+    private var hostKeyVerifier: SecureHostKeyVerifier? = null
+    private var securityNotificationManager: SecurityNotificationManager? = null
     
     private var connectionMonitor: ConnectionHealthMonitor? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
@@ -94,6 +98,12 @@ class SshProxyService : VpnService() {
         
         preferencesManager = PreferencesManager(this)
         serverRepository = ServerRepository(this)
+        
+        // Initialize security notification manager
+        securityNotificationManager = SecurityNotificationManager(this)
+        
+        // Initialize host key verifier
+        hostKeyVerifier = SecureHostKeyVerifier(this)
         
         // Initialize connection monitor
         connectionMonitor = ConnectionHealthMonitor(
@@ -196,13 +206,25 @@ class SshProxyService : VpnService() {
                 AppLog.log("Connecting to ${server.name} (${server.host}:${server.port}) as ${server.username}")
                 AppLog.log("SSH connect timeout: 30000ms")
                 
-                // SSH подключение как в рабочем example.kt
+                // SSH подключение с проверкой host key
                 AppLog.log("Initializing SSH client...")
                 sshClient = SSHClient().apply {
-                    addHostKeyVerifier(PromiscuousVerifier())
+                    // Use our secure host key verifier instead of promiscuous
+                    addHostKeyVerifier(hostKeyVerifier!!)
                     AppLog.log("Connecting to ${server.host}:${server.port}...")
-                    connect(server.host, server.port)
-                    AppLog.log("Connected. Authenticating as '${server.username}'...")
+                    
+                    try {
+                        connect(server.host, server.port)
+                        AppLog.log("Connected. Authenticating as '${server.username}'...")
+                    } catch (e: Exception) {
+                        // Check if this is a host key verification failure
+                        if (e.message?.contains("host key", ignoreCase = true) == true ||
+                            e.message?.contains("verification", ignoreCase = true) == true) {
+                            AppLog.log("Host key verification failed - showing security notification")
+                            securityNotificationManager?.showHostKeyChangeNotification(server.host, server.port)
+                        }
+                        throw e
+                    }
                     
                     val keyFile = resolvePrivateKeyFile(server.sshKeyId)
                         ?: throw IOException("SSH key not found. Please generate one.")
@@ -423,7 +445,7 @@ class SshProxyService : VpnService() {
                 Log.d(TAG, "Reconnecting to ${server.host}...")
 
                 sshClient = SSHClient(DefaultConfig()).apply {
-                    addHostKeyVerifier(PromiscuousVerifier())
+                    addHostKeyVerifier(hostKeyVerifier!!)
                     connectTimeout = 30000
                     connect(server.host, server.port)
 

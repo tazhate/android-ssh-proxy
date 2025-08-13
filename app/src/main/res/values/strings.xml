@@ -178,4 +178,17 @@
     <string name="language_system">System default</string>
     <string name="language_english">English</string>
     <string name="language_russian">Русский</string>
+
+    <!-- Host Key Validation -->
+    <string name="security_warning">Security Warning</string>
+    <string name="host_key_changed_message">The SSH host key for %1$s has changed!</string>
+    <string name="stored_fingerprint">Stored fingerprint:</string>
+    <string name="received_fingerprint">Received fingerprint:</string>
+    <string name="host_key_change_warning">This could indicate a man-in-the-middle attack or that the server has been reconfigured. Only continue if you trust this change.</string>
+    <string name="accept_and_continue">Accept and Continue</string>
+    <string name="reject_connection">Reject Connection</string>
+    <string name="security_alerts_channel">Security Alerts</string>
+    <string name="security_alerts_channel_description">Critical security warnings and alerts</string>
+    <string name="host_key_changed_notification">SSH server %1$s key changed!</string>
+    <string name="host_key_changed_notification_detail">The SSH host key for %1$s has changed. This could indicate a security issue. Tap to review.</string>
 </resources>

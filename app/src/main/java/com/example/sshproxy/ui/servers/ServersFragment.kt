@@ -48,6 +48,7 @@ class ServersFragment : Fragment() {
     private fun setupRecyclerView() {
         val keyRepository = KeyRepository(requireContext())
         val preferencesManager = PreferencesManager(requireContext())
+        val serverRepository = ServerRepository(requireContext())
         
         adapter = ServersAdapter(
             onServerClick = { server: Server ->
@@ -66,7 +67,8 @@ class ServersFragment : Fragment() {
                     .show()
             },
             keyRepository = keyRepository,
-            preferencesManager = preferencesManager
+            preferencesManager = preferencesManager,
+            serverRepository = serverRepository
         )
         
         binding.recyclerView.layoutManager = LinearLayoutManager(context)
