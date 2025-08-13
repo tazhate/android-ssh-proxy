@@ -21,6 +21,7 @@ import com.example.sshproxy.data.SshKeyManager
 import com.example.sshproxy.security.SecureHostKeyVerifier
 import com.example.sshproxy.security.SecurityNotificationManager
 import com.example.sshproxy.service.ConnectionHealthMonitor
+import com.example.sshproxy.network.PingMonitor
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -65,6 +66,10 @@ class SshProxyService : VpnService() {
         private val _isRunning = MutableStateFlow(false)
         val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
         
+        // Expose ping data
+        private val _currentPingMonitor = MutableStateFlow<PingMonitor?>(null)
+        val currentPingMonitor: StateFlow<PingMonitor?> = _currentPingMonitor.asStateFlow()
+        
         init {
             Security.addProvider(BouncyCastleProvider())
         }
@@ -79,6 +84,7 @@ class SshProxyService : VpnService() {
     private var securityNotificationManager: SecurityNotificationManager? = null
     
     private var connectionMonitor: ConnectionHealthMonitor? = null
+    private var pingMonitor: PingMonitor? = null
     private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
     
     private lateinit var preferencesManager: PreferencesManager
@@ -265,6 +271,13 @@ class SshProxyService : VpnService() {
                     _isRunning.value = true
                     updateNotification("Connected to ${server.name}")
                     AppLog.log("Connection fully established")
+                    
+                    // Start ping monitoring
+                    pingMonitor?.stopMonitoring()
+                    pingMonitor = PingMonitor(server.host, server.port)
+                    pingMonitor?.startMonitoring()
+                    _currentPingMonitor.value = pingMonitor
+                    AppLog.log("Started ping monitoring for ${server.host}:${server.port}")
                 }
 
                 connectionMonitor?.onConnectionEstablished()
@@ -904,6 +917,8 @@ class SshProxyService : VpnService() {
         _connectionState.value = ConnectionState.DISCONNECTED
         _isRunning.value = false
         connectionMonitor?.stopMonitoring()
+        pingMonitor?.stopMonitoring()
+        _currentPingMonitor.value = null
         serviceScope.cancel()
         cleanupSshConnection()
         super.onDestroy()

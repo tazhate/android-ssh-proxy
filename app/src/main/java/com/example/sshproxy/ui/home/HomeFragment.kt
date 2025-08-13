@@ -25,6 +25,11 @@ import com.example.sshproxy.data.IpLocationService
 import com.example.sshproxy.data.PreferencesManager
 import com.example.sshproxy.data.ServerRepository
 import com.example.sshproxy.data.SshKeyManager
+import com.example.sshproxy.data.ConnectionState
+import com.example.sshproxy.data.getDisplayStatus
+import com.example.sshproxy.data.getConnectionDuration
+import com.example.sshproxy.data.getPingDisplay
+import com.example.sshproxy.data.getQualityColor
 import com.example.sshproxy.databinding.FragmentHomeBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.collectLatest
@@ -89,67 +94,103 @@ class HomeFragment : Fragment() {
         }
         
         binding.btnRefreshIp.setOnClickListener {
+            // Force refresh when user explicitly requests it
+            IpLocationService.forceRefresh()
             refreshIpInfo()
         }
         
-        // Показываем IP карточку и загружаем информацию
+        // Показываем IP карточку и загружаем кэшированную информацию (без сетевых запросов)
         binding.cardExternalIp.visibility = View.VISIBLE
-        refreshIpInfo()
+        loadCachedIpInfo()
     }
 
     private fun observeViewModel() {
+        // Observe connection status with ping info
         viewLifecycleOwner.lifecycleScope.launch {
-            SshProxyService.connectionState.collectLatest { state ->
-                // Проверяем что binding еще валидный
+            viewModel.connectionStatus.collectLatest { status ->
                 if (_binding == null) return@collectLatest
                 
-                val isRunning = state == SshProxyService.ConnectionState.CONNECTED
-                binding.btnConnect.isSelected = isRunning
+                val isConnected = status.state == ConnectionState.CONNECTED
+                binding.btnConnect.isSelected = isConnected
                 
-                binding.tvConnectionStatus.text = when (state) {
-                    SshProxyService.ConnectionState.DISCONNECTED -> getString(R.string.vpn_status_disconnected)
-                    SshProxyService.ConnectionState.CONNECTING -> getString(R.string.vpn_status_connecting)
-                    SshProxyService.ConnectionState.CONNECTED -> getString(R.string.vpn_status_connected)
-                    SshProxyService.ConnectionState.DISCONNECTING -> getString(R.string.vpn_status_disconnecting)
+                // Update connection status text
+                binding.tvConnectionStatus.text = status.getDisplayStatus()
+                
+                // Show/hide connection info card
+                binding.cardConnectionInfo.visibility = if (isConnected) View.VISIBLE else View.GONE
+                
+                // Update ping information
+                if (isConnected) {
+                    binding.tvPing.text = status.getPingDisplay() ?: "--"
+                    binding.tvQuality.text = status.connectionQuality.displayName
+                    binding.tvConnectionDuration.text = status.getConnectionDuration() ?: "--"
+                    
+                    // Update quality indicator color
+                    binding.viewQualityIndicator.setBackgroundTintList(
+                        ContextCompat.getColorStateList(requireContext(), android.R.color.transparent)
+                    )
+                    binding.viewQualityIndicator.setBackgroundColor(status.getQualityColor())
+                    
+                    // Update ping text color based on latency
+                    val pingColor = when {
+                        status.latestPing?.isSuccessful != true -> ContextCompat.getColor(requireContext(), R.color.error)
+                        (status.latestPing.latencyMs) > 500 -> ContextCompat.getColor(requireContext(), R.color.warning)
+                        (status.latestPing.latencyMs) > 200 -> ContextCompat.getColor(requireContext(), R.color.fair)
+                        else -> ContextCompat.getColor(requireContext(), R.color.good)
+                    }
+                    binding.tvPing.setTextColor(pingColor)
                 }
                 
-                // Управляем анимацией мигания
-                if (state == SshProxyService.ConnectionState.CONNECTING || state == SshProxyService.ConnectionState.DISCONNECTING) {
+                // Manage blinking animation
+                if (status.state == ConnectionState.CONNECTING || status.state == ConnectionState.DISCONNECTING || status.state == ConnectionState.RECONNECTING) {
                     startBlinking()
                 } else {
                     stopBlinking()
                 }
                 
-                if (isRunning) {
+                // Update button icon
+                if (isConnected) {
                     binding.btnConnect.setIconResource(R.drawable.ic_stop)
                 } else {
                     binding.btnConnect.setIconResource(R.drawable.ic_power)
                 }
                 
-                // Обновляем IP информацию при изменении состояния соединения
-                if (state == SshProxyService.ConnectionState.CONNECTED) {
-                    // Проверяем binding перед обновлением
-                    if (_binding != null) {
-                        binding.tvCountryFlag.text = "⏳"
-                        binding.tvCountryName.text = getString(R.string.vpn_connecting)
-                    }
+                // Update IP info on VPN connection state change (smart caching)
+                val sharedPrefs = requireActivity().getSharedPreferences("app_prefs", 0)
+                val lastKnownState = sharedPrefs.getString("last_connection_state", "")
+                val currentStateString = status.state.toString()
+                
+                if (lastKnownState != currentStateString) {
+                    sharedPrefs.edit().putString("last_connection_state", currentStateString).apply()
                     
-                    // Большая задержка для подключения чтобы VPN точно заработал
-                    viewLifecycleOwner.lifecycleScope.launch {
-                        kotlinx.coroutines.delay(5000)
-                        refreshIpInfo()
-                    }
-                } else if (state == SshProxyService.ConnectionState.DISCONNECTED) {
-                    // Проверяем binding перед обновлением
-                    if (_binding != null) {
-                        binding.tvCountryFlag.text = "⏳"
-                        binding.tvCountryName.text = getString(R.string.vpn_disconnecting)
-                    }
+                    // Invalidate IP cache when VPN state changes
+                    val isVpnConnected = status.state == ConnectionState.CONNECTED
+                    IpLocationService.invalidateCacheOnVpnChange(isVpnConnected)
                     
-                    // Меньшая задержка для отключения
-                    viewLifecycleOwner.lifecycleScope.launch {
-                        kotlinx.coroutines.delay(3000) 
-                        refreshIpInfo()
+                    when (status.state) {
+                        ConnectionState.CONNECTED -> {
+                            if (_binding != null) {
+                                binding.tvCountryFlag.text = "⏳"
+                                binding.tvCountryName.text = getString(R.string.vpn_connecting)
+                            }
+                            // Wait for VPN to stabilize, then refresh IP
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                kotlinx.coroutines.delay(5000)
+                                refreshIpInfo()
+                            }
+                        }
+                        ConnectionState.DISCONNECTED -> {
+                            if (_binding != null) {
+                                binding.tvCountryFlag.text = "⏳"
+                                binding.tvCountryName.text = getString(R.string.vpn_disconnecting)
+                            }
+                            // Shorter delay for disconnect, then refresh IP
+                            viewLifecycleOwner.lifecycleScope.launch {
+                                kotlinx.coroutines.delay(2000)
+                                refreshIpInfo()
+                            }
+                        }
+                        else -> { /* no action needed */ }
                     }
                 }
             }
@@ -326,6 +367,23 @@ class HomeFragment : Fragment() {
         }
     }
 
+    private fun loadCachedIpInfo() {
+        // Load cached IP info without triggering network requests
+        val cachedLocation = IpLocationService.getCachedIpLocation()
+        if (cachedLocation != null && _binding != null) {
+            binding.tvExternalIp.text = cachedLocation.ip
+            binding.tvCountryName.text = cachedLocation.country
+            binding.tvCountryFlag.text = cachedLocation.flag
+            binding.btnRefreshIp.isEnabled = true
+        } else if (_binding != null) {
+            // No cache available, show placeholder
+            binding.tvExternalIp.text = "--"
+            binding.tvCountryName.text = getString(R.string.unknown_location)
+            binding.tvCountryFlag.text = "🌍"
+            binding.btnRefreshIp.isEnabled = true
+        }
+    }
+    
     private fun refreshIpInfo(retryCount: Int = 0) {
         viewLifecycleOwner.lifecycleScope.launch {
             try {

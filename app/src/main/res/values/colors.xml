@@ -69,6 +69,13 @@
     <color name="red_error">#F44336</color>
     <color name="icon_default">#666666</color>
     
+    <!-- Connection quality colors -->
+    <color name="excellent">#4CAF50</color>      <!-- Green -->
+    <color name="good">#8BC34A</color>           <!-- Light Green -->
+    <color name="fair">#FF9800</color>           <!-- Orange -->
+    <color name="error">#F44336</color>          <!-- Red -->
+    <color name="warning">#FFC107</color>        <!-- Amber -->
+    
     <!-- VPN button colors -->
     <color name="vpn_button_disconnected">#757575</color>  <!-- Gray -->
     <color name="vpn_button_connected">#00BFA5</color>     <!-- Mint green -->
