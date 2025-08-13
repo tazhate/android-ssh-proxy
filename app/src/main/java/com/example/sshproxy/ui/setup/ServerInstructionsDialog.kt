@@ -105,12 +105,12 @@ echo "Setup complete! Test: ssh -N -L 8080:127.0.0.1:8118 user@your-server"
 SCRIPT
 )
 
-## Manual steps (if automatic setup fails):
-1. Create restricted user
-2. Add SSH key with restrictions
-3. Configure SSH daemon
-4. Install Privoxy or Tinyproxy
-5. Configure proxy on port 8118
+## Manual steps (if automatic setup fails, these are conceptual steps):
+- Create a restricted user.
+- Add the SSH key with appropriate restrictions.
+- Configure the SSH daemon for the restricted user.
+- Install either Privoxy or Tinyproxy.
+- Configure the chosen proxy to listen on port 8118.
         """.trimIndent()
     }
     
