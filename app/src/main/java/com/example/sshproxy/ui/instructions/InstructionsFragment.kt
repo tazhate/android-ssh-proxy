@@ -114,28 +114,17 @@ EOF'
 
 ## 4. Test and reload SSH configuration:
 sudo sshd -t
-sudo systemctl reload sshd || sudo systemctl reload ssh
-
-## 5. Install and configure HTTP proxy (Privoxy or Tinyproxy):
-
-### Option A: Privoxy (recommended, better privacy features)
-# Detect package manager and install
-if command -v apt-get >/dev/null 2>&1; then
-    sudo apt-get update && sudo apt-get install -y privoxy
-elif command -v yum >/dev/null 2>&1; then
-    sudo yum install -y privoxy
-elif command -v dnf >/dev/null 2>&1; then
-    sudo dnf install -y privoxy
-elif command -v pacman >/dev/null 2>&1; then
-    sudo pacman -S --noconfirm privoxy
+# Auto-detect SSH service name
+if systemctl is-active --quiet ssh; then
+    sudo systemctl reload ssh
+elif systemctl is-active --quiet sshd; then
+    sudo systemctl reload sshd
+else
+    # Try both service names
+    sudo systemctl reload ssh || sudo systemctl reload sshd
 fi
 
-# Configure Privoxy (listens on 127.0.0.1:8118 by default)
-sudo sed -i 's/^listen-address.*/listen-address  127.0.0.1:8118/' /etc/privoxy/config
-sudo systemctl restart privoxy
-sudo systemctl enable privoxy
-
-### Option B: Tinyproxy (lightweight alternative)
+## 5. Install and configure HTTP proxy (Tinyproxy):
 # Detect package manager and install
 if command -v apt-get >/dev/null 2>&1; then
     sudo apt-get update && sudo apt-get install -y tinyproxy
@@ -158,9 +147,8 @@ sudo systemctl enable tinyproxy
 ## Notes:
 - The user '$username' is restricted to port forwarding only
 - No shell access, no TTY, no X11 forwarding
-- Proxy will run on port 8118 (localhost only)
+- Tinyproxy will run on port 8118 (localhost only)
 - Test connection: ssh -N -L 8080:127.0.0.1:8118 $username@your-server
-- You can use either Privoxy or Tinyproxy, both work well
         """.trimIndent()
     }
 
@@ -194,6 +182,17 @@ fi
 
 echo "Using package manager: ${'$'}PKG_MGR"
 
+# Auto-detect SSH service name
+if systemctl is-active --quiet ssh; then
+    SSH_SERVICE="ssh"
+elif systemctl is-active --quiet sshd; then
+    SSH_SERVICE="sshd"
+else
+    SSH_SERVICE="ssh"  # Default to ssh for Ubuntu/Debian
+fi
+
+echo "SSH service detected: ${'$'}SSH_SERVICE"
+
 # Create user and setup SSH
 sudo adduser --disabled-password --gecos "" --home /home/${'$'}USER ${'$'}USER && \
 sudo usermod -s /usr/sbin/nologin ${'$'}USER && \
@@ -211,22 +210,14 @@ Match User ${'$'}USER
     GatewayPorts no
 EOF" && \
 sudo sshd -t && \
-sudo systemctl reload sshd || sudo systemctl reload ssh && \
+sudo systemctl reload ${'$'}SSH_SERVICE && \
 echo "SSH setup complete"
 
-# Install and configure proxy (try Privoxy first, then Tinyproxy)
-echo "Installing HTTP proxy..."
+# Install and configure Tinyproxy
+echo "Installing Tinyproxy..."
 sudo ${'$'}PKG_UPDATE
 
-# Try to install Privoxy
-if sudo ${'$'}PKG_INSTALL privoxy 2>/dev/null; then
-    echo "Configuring Privoxy..."
-    sudo sed -i 's/^listen-address.*/listen-address  127.0.0.1:8118/' /etc/privoxy/config
-    sudo systemctl restart privoxy
-    sudo systemctl enable privoxy
-    echo "Privoxy installed and configured on port 8118"
-# If Privoxy fails, try Tinyproxy
-elif sudo ${'$'}PKG_INSTALL tinyproxy 2>/dev/null; then
+if sudo ${'$'}PKG_INSTALL tinyproxy; then
     echo "Configuring Tinyproxy..."
     sudo sed -i 's/^Port.*/Port 8118/' /etc/tinyproxy/tinyproxy.conf
     sudo sed -i 's/^Listen.*/Listen 127.0.0.1/' /etc/tinyproxy/tinyproxy.conf
@@ -235,12 +226,13 @@ elif sudo ${'$'}PKG_INSTALL tinyproxy 2>/dev/null; then
     sudo systemctl enable tinyproxy
     echo "Tinyproxy installed and configured on port 8118"
 else
-    echo "Warning: Could not install HTTP proxy. Please install Privoxy or Tinyproxy manually."
+    echo "Error: Could not install Tinyproxy. Please install manually."
+    exit 1
 fi
 
 echo ""
 echo "Setup complete for user: ${'$'}USER"
-echo "Test with: ssh -N -L 8080:127.0.0.1:8118 $USER@your-server"
+echo "Test with: ssh -N -L 8080:127.0.0.1:8118 ${'$'}USER@your-server"
         """.trimIndent()
     }
 

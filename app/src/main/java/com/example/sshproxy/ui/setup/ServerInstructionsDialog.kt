@@ -54,16 +54,31 @@ class ServerInstructionsDialog : DialogFragment() {
 bash <(cat <<'SCRIPT'
 # Detect package manager
 if command -v apt-get >/dev/null 2>&1; then
-    PKG_INSTALL="apt-get update && apt-get install -y"
+    PKG_UPDATE="apt-get update"
+    PKG_INSTALL="apt-get install -y"
 elif command -v yum >/dev/null 2>&1; then
+    PKG_UPDATE="yum check-update || true"
     PKG_INSTALL="yum install -y"
 elif command -v dnf >/dev/null 2>&1; then
+    PKG_UPDATE="dnf check-update || true"
     PKG_INSTALL="dnf install -y"
 elif command -v pacman >/dev/null 2>&1; then
-    PKG_INSTALL="pacman -Sy --noconfirm"
+    PKG_UPDATE="pacman -Sy"
+    PKG_INSTALL="pacman -S --noconfirm"
 else
     echo "No supported package manager found!"; exit 1
 fi
+
+# Auto-detect SSH service name
+if systemctl is-active --quiet ssh; then
+    SSH_SERVICE="ssh"
+elif systemctl is-active --quiet sshd; then
+    SSH_SERVICE="sshd"
+else
+    SSH_SERVICE="ssh"  # Default to ssh for Ubuntu/Debian
+fi
+
+echo "SSH service detected: ${'$'}SSH_SERVICE"
 
 # Setup user
 adduser --disabled-password --gecos "" --home /home/user user
@@ -84,22 +99,18 @@ Match User user
     GatewayPorts no
 EOF
 
-sshd -t && (systemctl reload sshd || systemctl reload ssh)
+sshd -t && systemctl reload ${'$'}SSH_SERVICE
 
-# Install proxy (try both)
-$PKG_INSTALL privoxy || $PKG_INSTALL tinyproxy
+# Install and configure Tinyproxy
+${'$'}PKG_UPDATE
+${'$'}PKG_INSTALL tinyproxy
 
-# Configure whichever is installed
-if command -v privoxy >/dev/null 2>&1; then
-    sed -i 's/^listen-address.*/listen-address  127.0.0.1:8118/' /etc/privoxy/config
-    systemctl restart privoxy && systemctl enable privoxy
-    echo "Privoxy configured on port 8118"
-elif command -v tinyproxy >/dev/null 2>&1; then
-    sed -i 's/^Port.*/Port 8118/' /etc/tinyproxy/tinyproxy.conf
-    sed -i 's/^Listen.*/Listen 127.0.0.1/' /etc/tinyproxy/tinyproxy.conf
-    systemctl restart tinyproxy && systemctl enable tinyproxy
-    echo "Tinyproxy configured on port 8118"
-fi
+# Configure Tinyproxy
+sed -i 's/^Port.*/Port 8118/' /etc/tinyproxy/tinyproxy.conf
+sed -i 's/^Listen.*/Listen 127.0.0.1/' /etc/tinyproxy/tinyproxy.conf
+sed -i 's/^#Allow 127.0.0.1/Allow 127.0.0.1/' /etc/tinyproxy/tinyproxy.conf
+systemctl restart tinyproxy && systemctl enable tinyproxy
+echo "Tinyproxy configured on port 8118"
 
 echo "Setup complete! Test: ssh -N -L 8080:127.0.0.1:8118 user@your-server"
 SCRIPT
