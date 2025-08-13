@@ -16,10 +16,10 @@ object AppLog {
         val logEntry = "$timestamp: $message"
 
         val currentLogs = _logMessages.value?.toMutableList() ?: mutableListOf()
-        currentLogs.add(0, logEntry) // Добавляем новое сообщение в начало списка
+        currentLogs.add(0, logEntry) // Add new message to the top
 
         if (currentLogs.size > MAX_LOG_LINES) {
-            currentLogs.removeAt(currentLogs.size - 1) // Удаляем самое старое
+            currentLogs.removeAt(currentLogs.size - 1) // Remove the oldest
         }
 
         _logMessages.postValue(currentLogs)

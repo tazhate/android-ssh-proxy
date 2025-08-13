@@ -16,12 +16,7 @@
         android:title="Keys" />
     
     <item
-        android:id="@+id/navigation_instructions"
-        android:icon="@drawable/ic_help"
-        android:title="Setup" />
-    
-    <item
-        android:id="@+id/navigation_log"
-        android:icon="@drawable/ic_log"
-        android:title="Log" />
+        android:id="@+id/navigation_settings"
+        android:icon="@drawable/ic_settings"
+        android:title="Settings" />
 </menu>

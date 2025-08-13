@@ -82,6 +82,43 @@
 
         </com.google.android.material.textfield.TextInputLayout>
 
+        <!-- SSH Key Selection -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="SSH Key"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:layout_marginTop="16dp"
+            android:layout_marginBottom="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:gravity="center_vertical">
+
+            <TextView
+                android:id="@+id/tvSelectedKey"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Use active key"
+                android:textAppearance="?attr/textAppearanceBodyLarge"
+                android:background="?attr/selectableItemBackground"
+                android:padding="12dp"
+                android:drawableStart="@drawable/ic_key"
+                android:drawablePadding="8dp"
+                android:gravity="center_vertical" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnSelectKey"
+                style="@style/Widget.Material3.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="Change" />
+
+        </LinearLayout>
+
     </LinearLayout>
 
 </LinearLayout>

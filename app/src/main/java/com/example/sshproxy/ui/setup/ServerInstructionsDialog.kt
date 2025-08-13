@@ -7,20 +7,25 @@ import android.content.Context
 import android.os.Bundle
 import android.widget.Toast
 import androidx.fragment.app.DialogFragment
-import com.example.sshproxy.data.PreferencesManager
-import com.example.sshproxy.data.SshKeyManager
 import com.example.sshproxy.databinding.DialogServerInstructionsBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 
 class ServerInstructionsDialog : DialogFragment() {
 
+    companion object {
+        private const val ARG_PUBLIC_KEY = "public_key"
+        fun newInstance(publicKey: String): ServerInstructionsDialog {
+            val args = Bundle()
+            args.putString(ARG_PUBLIC_KEY, publicKey)
+            val fragment = ServerInstructionsDialog()
+            fragment.arguments = args
+            return fragment
+        }
+    }
+
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val binding = DialogServerInstructionsBinding.inflate(layoutInflater)
-        val keyManager = SshKeyManager(requireContext())
-        val preferencesManager = PreferencesManager(requireContext())
-        val activeKeyId = preferencesManager.getActiveKeyId()
-        
-        val publicKey = activeKeyId?.let { keyManager.getPublicKey(it) }
+        val publicKey = arguments?.getString(ARG_PUBLIC_KEY)
         
         // Generate instructions with the actual public key
         if (publicKey != null) {

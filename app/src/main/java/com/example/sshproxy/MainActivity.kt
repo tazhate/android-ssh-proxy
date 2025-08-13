@@ -5,11 +5,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.fragment.app.Fragment
 import com.example.sshproxy.databinding.ActivityMainNewBinding
 import com.example.sshproxy.ui.home.HomeFragment
-import com.example.sshproxy.ui.instructions.InstructionsFragment
 import com.example.sshproxy.ui.keys.KeysFragment
-import com.example.sshproxy.ui.log.LogFragment
 import com.example.sshproxy.ui.servers.ServersFragment
-import com.example.sshproxy.ui.setup.SetupManager
+import com.example.sshproxy.ui.settings.SettingsFragment
+import com.example.sshproxy.ui.setup.*
 import com.google.android.material.navigation.NavigationBarView
 
 class MainActivity : AppCompatActivity() {
@@ -25,7 +24,7 @@ class MainActivity : AppCompatActivity() {
         
         // Check if first launch
         if (setupManager.isFirstLaunch()) {
-            setupManager.showSetupFlow()
+            startSetupFlow()
         } else {
             setupNavigation()
         }
@@ -46,12 +45,8 @@ class MainActivity : AppCompatActivity() {
                     loadFragment(KeysFragment())
                     true
                 }
-                R.id.navigation_instructions -> {
-                    loadFragment(InstructionsFragment())
-                    true
-                }
-                R.id.navigation_log -> {
-                    loadFragment(LogFragment())
+                R.id.navigation_settings -> {
+                    loadFragment(SettingsFragment())
                     true
                 }
                 else -> false
@@ -59,8 +54,11 @@ class MainActivity : AppCompatActivity() {
         })
         
         // Load home fragment by default
-        binding.bottomNavigation.selectedItemId = R.id.navigation_home
+        if (supportFragmentManager.findFragmentById(R.id.fragmentContainer) == null) {
+            binding.bottomNavigation.selectedItemId = R.id.navigation_home
+        }
     }
+    
 
     private fun loadFragment(fragment: Fragment) {
         supportFragmentManager.beginTransaction()
@@ -69,6 +67,43 @@ class MainActivity : AppCompatActivity() {
     }
 
     fun onSetupComplete() {
+        setupNavigation()
+    }
+
+    private fun startSetupFlow() {
+        // Hide bottom navigation during setup
+        binding.bottomNavigation.visibility = android.view.View.GONE
+        loadFragment(WelcomeFragment())
+    }
+    
+    fun navigateToKeySetup() {
+        loadFragment(KeyChoiceFragment())
+    }
+    
+    fun navigateToKeyGeneration() {
+        loadFragment(KeyGenerationFragment())
+    }
+    
+    fun navigateToKeyImport() {
+        loadFragment(KeyImportFragment())
+    }
+    
+    fun navigateToAddServer() {
+        loadFragment(AddFirstServerFragment())
+    }
+    
+    fun completeSetup() {
+        setupManager.completeSetup()
+        // Show bottom navigation and go to main app
+        binding.bottomNavigation.visibility = android.view.View.VISIBLE
+        setupNavigation()
+    }
+
+    fun showSetupFlow() {
+        loadFragment(KeySetupFragment())
+    }
+
+    fun navigateToHome() {
         setupNavigation()
     }
 }

@@ -92,6 +92,16 @@
 
                 </LinearLayout>
 
+                <!-- Network Test Button -->
+                <com.google.android.material.button.MaterialButton
+                    android:id="@+id/btnTestNetwork"
+                    style="@style/Widget.Material3.Button.OutlinedButton"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:layout_marginTop="16dp"
+                    android:text="Test Network Connectivity"
+                    app:icon="@drawable/ic_network_check" />
+
             </LinearLayout>
 
         </com.google.android.material.card.MaterialCardView>

@@ -11,4 +11,9 @@
     <color name="md_theme_light_onBackground">#1A1C1E</color>
     <color name="md_theme_light_surface">#FCFCFF</color>
     <color name="md_theme_light_onSurface">#1A1C1E</color>
+    
+    <!-- Test button colors -->
+    <color name="green_success">#4CAF50</color>
+    <color name="red_error">#F44336</color>
+    <color name="icon_default">#666666</color>
 </resources>

@@ -38,6 +38,17 @@
                 android:layout_height="wrap_content"
                 android:textAppearance="?attr/textAppearanceBodySmall"
                 android:textColor="?attr/colorOnSurfaceVariant" />
+                
+            <TextView
+                android:id="@+id/tvSshKey"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:textAppearance="?attr/textAppearanceBodySmall"
+                android:textColor="?attr/colorSecondary"
+                android:drawableStart="@drawable/ic_key"
+                android:drawablePadding="4dp"
+                android:layout_marginTop="2dp"
+                android:gravity="center_vertical" />
 
         </LinearLayout>
 

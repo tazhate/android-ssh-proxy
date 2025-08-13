@@ -43,6 +43,15 @@
 
         </LinearLayout>
 
+        <ImageButton
+            android:id="@+id/btnCopyKey"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:src="@android:drawable/ic_menu_share"
+            android:contentDescription="Copy Public Key"
+            android:background="?attr/selectableItemBackgroundBorderless"
+            android:layout_marginEnd="8dp"/>
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnDelete"
             style="@style/Widget.Material3.Button.IconButton"

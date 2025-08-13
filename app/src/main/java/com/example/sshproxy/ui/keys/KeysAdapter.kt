@@ -10,7 +10,8 @@ import com.example.sshproxy.databinding.ItemKeyBinding
 
 class KeysAdapter(
     private val onKeyClick: (SshKey) -> Unit,
-    private val onKeyDelete: (SshKey) -> Unit
+    private val onKeyDelete: (SshKey) -> Unit,
+    private val onKeyCopy: (SshKey) -> Unit
 ) : ListAdapter<SshKey, KeysAdapter.KeyViewHolder>(KeyDiffCallback()) {
 
     private var activeKeyId: String? = null
@@ -27,17 +28,18 @@ class KeysAdapter(
 
     override fun onBindViewHolder(holder: KeyViewHolder, position: Int) {
         val key = getItem(position)
-        holder.bind(key, key.id == activeKeyId, onKeyClick, onKeyDelete)
+        holder.bind(key, key.id == activeKeyId, onKeyClick, onKeyDelete, onKeyCopy)
     }
 
     class KeyViewHolder(private val binding: ItemKeyBinding) : RecyclerView.ViewHolder(binding.root) {
-        fun bind(key: SshKey, isActive: Boolean, onClick: (SshKey) -> Unit, onDelete: (SshKey) -> Unit) {
+        fun bind(key: SshKey, isActive: Boolean, onClick: (SshKey) -> Unit, onDelete: (SshKey) -> Unit, onCopy: (SshKey) -> Unit) {
             binding.tvKeyName.text = key.name
             binding.tvKeyFingerprint.text = key.fingerprint
             binding.radioActive.isChecked = isActive
             
             binding.root.setOnClickListener { onClick(key) }
             binding.btnDelete.setOnClickListener { onDelete(key) }
+            binding.btnCopyKey.setOnClickListener { onCopy(key) }
         }
     }
 

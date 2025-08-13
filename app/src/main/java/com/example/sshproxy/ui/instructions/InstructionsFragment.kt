@@ -9,19 +9,32 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
 import androidx.fragment.app.Fragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import com.example.sshproxy.data.KeyRepository
 import com.example.sshproxy.data.PreferencesManager
 import com.example.sshproxy.data.ServerRepository
 import com.example.sshproxy.databinding.FragmentInstructionsBinding
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import java.net.InetAddress
+import java.net.Socket
+import java.net.URL
 
 class InstructionsFragment : Fragment() {
     private var _binding: FragmentInstructionsBinding? = null
     private val binding get() = _binding!!
     
-    private lateinit var keyRepository: KeyRepository
-    private lateinit var serverRepository: ServerRepository
-    private lateinit var preferencesManager: PreferencesManager
+    private val viewModel: InstructionsViewModel by viewModels {
+        InstructionsViewModelFactory(
+            KeyRepository(requireContext()),
+            ServerRepository(requireContext()),
+            PreferencesManager(requireContext())
+        )
+    }
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentInstructionsBinding.inflate(inflater, container, false)
@@ -31,11 +44,7 @@ class InstructionsFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         
-        keyRepository = KeyRepository(requireContext())
-        serverRepository = ServerRepository(requireContext())
-        preferencesManager = PreferencesManager(requireContext())
-        
-        updateInstructions()
+        observeViewModel()
         
         binding.btnSelectServer.setOnClickListener {
             showServerSelector()
@@ -52,29 +61,29 @@ class InstructionsFragment : Fragment() {
         binding.btnCopyQuick.setOnClickListener {
             copyQuickCommand()
         }
+        
+        binding.btnTestNetwork.setOnClickListener {
+            runNetworkTest()
+        }
     }
 
-    private fun updateInstructions() {
-        val activeKeyId = preferencesManager.getActiveKeyId()
-        val activeServerId = preferencesManager.getActiveServerId()
-        
-        val key = keyRepository.getKeys().find { it.id == activeKeyId }
-        val server = serverRepository.getServers().find { it.id == activeServerId }
-        
-        binding.tvSelectedKey.text = key?.name ?: "No key selected"
-        binding.tvSelectedServer.text = server?.name ?: "No server selected"
-        
-        if (key != null) {
-            val username = server?.user ?: "user"
-            val instructions = generateInstructions(key.publicKey, username)
-            binding.tvInstructions.text = instructions
-            
-            // Quick command for experienced users
-            val quickCommand = generateQuickCommand(key.publicKey, username)
-            binding.tvQuickCommand.text = quickCommand
-        } else {
-            binding.tvInstructions.text = "Please select or generate an SSH key first"
-            binding.tvQuickCommand.text = "No key selected"
+    private fun observeViewModel() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            combine(viewModel.selectedKey, viewModel.selectedServer) { key, server ->
+                Pair(key, server)
+            }.collect { (key, server) ->
+                binding.tvSelectedKey.text = key?.name ?: "No key selected"
+                binding.tvSelectedServer.text = server?.name ?: "No server selected"
+
+                if (key != null) {
+                    val username = server?.username ?: "sshproxy"
+                    binding.tvInstructions.text = generateInstructions(key.publicKey, username)
+                    binding.tvQuickCommand.text = generateQuickCommand(key.publicKey, username)
+                } else {
+                    binding.tvInstructions.text = "Please select or generate an SSH key first"
+                    binding.tvQuickCommand.text = "No key selected"
+                }
+            }
         }
     }
 
@@ -236,42 +245,40 @@ echo "Test with: ssh -N -L 8080:127.0.0.1:8118 ${'$'}USER@your-server"
     }
 
     private fun showServerSelector() {
-        val servers = serverRepository.getServers()
+        val servers = viewModel.servers.value
         if (servers.isEmpty()) {
             Toast.makeText(context, "No servers configured", Toast.LENGTH_SHORT).show()
             return
         }
 
-        val serverNames = servers.map { server -> "${server.name} (${server.user}@${server.host})" }.toTypedArray()
-        val currentId = preferencesManager.getActiveServerId()
+        val serverNames = servers.map { server -> "${server.name} (${server.username}@${server.host})" }.toTypedArray()
+        val currentId = viewModel.selectedServer.value?.id
         val currentIndex = servers.indexOfFirst { server -> server.id == currentId }.takeIf { index -> index >= 0 } ?: 0
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle("Select Server for Instructions")
             .setSingleChoiceItems(serverNames, currentIndex) { dialog, which ->
-                preferencesManager.setActiveServerId(servers[which].id)
-                updateInstructions()
+                viewModel.selectServer(servers[which])
                 dialog.dismiss()
             }
             .show()
     }
 
     private fun showKeySelector() {
-        val keys = keyRepository.getKeys()
+        val keys = viewModel.keys.value
         if (keys.isEmpty()) {
             Toast.makeText(context, "No SSH keys configured", Toast.LENGTH_SHORT).show()
             return
         }
 
         val keyNames = keys.map { key -> key.name }.toTypedArray()
-        val currentId = preferencesManager.getActiveKeyId()
+        val currentId = viewModel.selectedKey.value?.id
         val currentIndex = keys.indexOfFirst { key -> key.id == currentId }.takeIf { index -> index >= 0 } ?: 0
 
         MaterialAlertDialogBuilder(requireContext())
             .setTitle("Select SSH Key")
             .setSingleChoiceItems(keyNames, currentIndex) { dialog, which ->
-                preferencesManager.setActiveKeyId(keys[which].id)
-                updateInstructions()
+                viewModel.selectKey(keys[which])
                 dialog.dismiss()
             }
             .show()
@@ -294,6 +301,85 @@ echo "Test with: ssh -N -L 8080:127.0.0.1:8118 ${'$'}USER@your-server"
             val clip = ClipData.newPlainText("Quick Setup Script", text)
             clipboard.setPrimaryClip(clip)
             Toast.makeText(context, "Quick command copied", Toast.LENGTH_SHORT).show()
+        }
+    }
+    
+    private fun runNetworkTest() {
+        val server = viewModel.selectedServer.value
+        if (server == null) {
+            Toast.makeText(context, "Please select a server first", Toast.LENGTH_SHORT).show()
+            return
+        }
+        
+        Toast.makeText(context, "Running network test...", Toast.LENGTH_SHORT).show()
+        
+        viewLifecycleOwner.lifecycleScope.launch {
+            val results = withContext(Dispatchers.IO) {
+                val testResults = mutableListOf<String>()
+                
+                // Тест 1: DNS разрешение
+                try {
+                    val address = InetAddress.getByName(server.host)
+                    testResults.add("✓ DNS Resolution: ${server.host} → ${address.hostAddress}")
+                } catch (e: Exception) {
+                    testResults.add("✗ DNS Resolution: Failed - ${e.message}")
+                }
+                
+                // Тест 2: HTTP подключение (проверяем общую сетевую доступность)
+                try {
+                    val url = URL("https://www.google.com")
+                    val connection = url.openConnection()
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+                    connection.connect()
+                    testResults.add("✓ Internet Access: Working")
+                } catch (e: Exception) {
+                    testResults.add("✗ Internet Access: Failed - ${e.message}")
+                }
+                
+                // Тест 3: Loopback (базовая функциональность сокетов)
+                try {
+                    val localSocket = Socket()
+                    localSocket.connect(java.net.InetSocketAddress("127.0.0.1", 1), 1000)
+                    localSocket.close()
+                    testResults.add("✓ Local Sockets: Working")
+                } catch (e: Exception) {
+                    testResults.add("✗ Local Sockets: ${e.message}")
+                }
+                
+                // Тест 4: SSH подключение к серверу
+                try {
+                    val sshSocket = Socket()
+                    sshSocket.connect(java.net.InetSocketAddress(server.host, server.port), 10000)
+                    sshSocket.close()
+                    testResults.add("✓ SSH Server (${server.host}:${server.port}): Reachable")
+                } catch (e: Exception) {
+                    testResults.add("✗ SSH Server (${server.host}:${server.port}): ${e.message}")
+                }
+                
+                // Тест 5: Информация о процессе
+                testResults.add("")
+                testResults.add("=== Debug Information ===")
+                testResults.add("Process UID: ${android.os.Process.myUid()}")
+                testResults.add("Process PID: ${android.os.Process.myPid()}")
+                testResults.add("Thread: ${Thread.currentThread().name}")
+                
+                testResults
+            }
+            
+            // Показываем результаты в диалоге
+            val message = results.joinToString("\n")
+            MaterialAlertDialogBuilder(requireContext())
+                .setTitle("Network Test Results")
+                .setMessage(message)
+                .setPositiveButton("OK", null)
+                .setNegativeButton("Copy Results") { _, _ ->
+                    val clipboard = requireContext().getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    val clip = ClipData.newPlainText("Network Test Results", message)
+                    clipboard.setPrimaryClip(clip)
+                    Toast.makeText(context, "Results copied to clipboard", Toast.LENGTH_SHORT).show()
+                }
+                .show()
         }
     }
 

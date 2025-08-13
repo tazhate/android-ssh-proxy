@@ -1,24 +1,35 @@
 package com.example.sshproxy.data
 
-import java.util.UUID
+import androidx.room.ColumnInfo
+import androidx.room.Entity
+import androidx.room.PrimaryKey
 
+@Entity(tableName = "servers")
 data class Server(
-    val id: String = UUID.randomUUID().toString(),
+    @PrimaryKey(autoGenerate = true)
+    val id: Long = 0,
+
+    @ColumnInfo(name = "name")
     val name: String,
+
+    @ColumnInfo(name = "host")
     val host: String,
+
+    @ColumnInfo(name = "port")
     val port: Int = 22,
-    val user: String = "user"
-) {
-    companion object {
-        fun fromLegacyString(str: String): Server? {
-            val parts = str.split(":")
-            return if (parts.size == 2) {
-                Server(
-                    name = parts[0],
-                    host = parts[0],
-                    port = parts[1].toIntOrNull() ?: 22
-                )
-            } else null
-        }
-    }
-}
+
+    @ColumnInfo(name = "username")
+    val username: String = "user",
+
+    @ColumnInfo(name = "ssh_key_id")
+    val sshKeyId: String? = null, // ID SSH ключа для этого сервера
+
+    @ColumnInfo(name = "is_favorite")
+    val isFavorite: Boolean = false,
+
+    @ColumnInfo(name = "created_at")
+    val createdAt: Long = System.currentTimeMillis(),
+
+    @ColumnInfo(name = "last_used")
+    val lastUsed: Long? = null
+)

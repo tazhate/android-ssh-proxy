@@ -6,11 +6,19 @@ import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.example.sshproxy.data.Server
+import com.example.sshproxy.data.KeyRepository
+import com.example.sshproxy.data.PreferencesManager
 import com.example.sshproxy.databinding.ItemServerBinding
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class ServersAdapter(
     private val onServerClick: (Server) -> Unit,
-    private val onServerDelete: (Server) -> Unit
+    private val onServerDelete: (Server) -> Unit,
+    private val keyRepository: KeyRepository,
+    private val preferencesManager: PreferencesManager
 ) : ListAdapter<Server, ServersAdapter.ServerViewHolder>(ServerDiffCallback()) {
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ServerViewHolder {
@@ -20,13 +28,38 @@ class ServersAdapter(
 
     override fun onBindViewHolder(holder: ServerViewHolder, position: Int) {
         val server = getItem(position)
-        holder.bind(server, onServerClick, onServerDelete)
+        holder.bind(server, onServerClick, onServerDelete, keyRepository, preferencesManager)
     }
 
     class ServerViewHolder(private val binding: ItemServerBinding) : RecyclerView.ViewHolder(binding.root) {
-        fun bind(server: Server, onClick: (Server) -> Unit, onDelete: (Server) -> Unit) {
+        fun bind(
+            server: Server, 
+            onClick: (Server) -> Unit, 
+            onDelete: (Server) -> Unit,
+            keyRepository: KeyRepository,
+            preferencesManager: PreferencesManager
+        ) {
             binding.tvServerName.text = server.name
-            binding.tvServerDetails.text = "${server.user}@${server.host}:${server.port}"
+            binding.tvServerDetails.text = "${server.username}@${server.host}:${server.port}"
+            
+            // Показать информацию о SSH ключе
+            CoroutineScope(Dispatchers.Main).launch {
+                val keyInfo = withContext(Dispatchers.IO) {
+                    if (server.sshKeyId != null) {
+                        val key = keyRepository.getKeyById(server.sshKeyId)
+                        key?.name ?: "Unknown key"
+                    } else {
+                        val activeKeyId = preferencesManager.getActiveKeyId()
+                        if (activeKeyId != null) {
+                            val activeKey = keyRepository.getKeyById(activeKeyId)
+                            "Active: ${activeKey?.name ?: "Unknown"}"
+                        } else {
+                            "No key"
+                        }
+                    }
+                }
+                binding.tvSshKey.text = keyInfo
+            }
             
             binding.root.setOnClickListener { onClick(server) }
             binding.btnDelete.setOnClickListener { onDelete(server) }

@@ -1,38 +1,38 @@
 package com.example.sshproxy.data
 
 import android.content.Context
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
-import java.io.File
-import java.util.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 
 class KeyRepository(private val context: Context) {
-    private val prefs = context.getSharedPreferences("ssh_keys", Context.MODE_PRIVATE)
-    private val gson = Gson()
-    private val keyManager = SshKeyManager(context)
+    private val database = ServerDatabase.getDatabase(context)
+    private val keyDao = database.keyDao()
 
-    fun getKeys(): List<SshKey> {
-        val json = prefs.getString("key_list", "[]")
-        val type = object : TypeToken<List<SshKey>>() {}.type
-        return gson.fromJson(json, type)
+    fun getAllKeys(): Flow<List<SshKey>> = keyDao.getAllKeys()
+
+    suspend fun insertKey(key: SshKey) {
+        withContext(Dispatchers.IO) {
+            keyDao.insertKey(key)
+        }
     }
 
-    fun generateKeyPair(name: String) {
-        val key = keyManager.generateKeyPair(name)
-        val keys = getKeys().toMutableList()
-        keys.add(key)
-        saveKeys(keys)
+    suspend fun getKeyById(id: String): SshKey? {
+        return withContext(Dispatchers.IO) {
+            keyDao.getKeyById(id)
+        }
     }
 
-    fun deleteKey(id: String) {
-        val keys = getKeys().toMutableList()
-        keys.removeAll { it.id == id }
-        saveKeys(keys)
-        keyManager.deleteKeyFiles(id)
+    suspend fun generateKeyPair(name: String) {
+        withContext(Dispatchers.IO) {
+            SshKeyManager(context, this@KeyRepository).generateKeyPair(name)
+        }
     }
 
-    private fun saveKeys(keys: List<SshKey>) {
-        val json = gson.toJson(keys)
-        prefs.edit().putString("key_list", json).apply()
+    suspend fun deleteKey(id: String) {
+        withContext(Dispatchers.IO) {
+            keyDao.deleteKey(id)
+            SshKeyManager(context, this@KeyRepository).deleteKeyFiles(id)
+        }
     }
 }

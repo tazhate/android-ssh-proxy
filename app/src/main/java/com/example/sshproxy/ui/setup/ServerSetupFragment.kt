@@ -7,15 +7,18 @@ import android.view.ViewGroup
 import android.widget.Toast
 import androidx.core.widget.doAfterTextChanged
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import com.example.sshproxy.MainActivity
 import com.example.sshproxy.data.Server
 import com.example.sshproxy.data.ServerRepository
 import com.example.sshproxy.databinding.FragmentServerSetupBinding
-import com.example.sshproxy.MainActivity
+import kotlinx.coroutines.launch
 
 class ServerSetupFragment : Fragment() {
     private var _binding: FragmentServerSetupBinding? = null
     private val binding get() = _binding!!
     private lateinit var serverRepository: ServerRepository
+    private lateinit var setupManager: SetupManager
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentServerSetupBinding.inflate(inflater, container, false)
@@ -26,9 +29,10 @@ class ServerSetupFragment : Fragment() {
         super.onViewCreated(view, savedInstanceState)
         
         serverRepository = ServerRepository(requireContext())
+        setupManager = SetupManager(requireContext())
         
         // Set defaults
-        binding.etUser.setText("user")
+        binding.etUser.setText("sshproxy")
         binding.etPort.setText("22")
         
         // Auto-fill name from host
@@ -65,24 +69,26 @@ class ServerSetupFragment : Fragment() {
             return
         }
         
-        val name = binding.etName.text?.toString()?.trim().takeIf { it?.isNotEmpty() == true } ?: host
-        val user = binding.etUser.text?.toString()?.trim() ?: "user"
+        val nameText = binding.etName.text?.toString()?.trim()
+        val name = if (!nameText.isNullOrEmpty()) nameText else host
+        val user = binding.etUser.text?.toString()?.trim() ?: "sshproxy"
         val port = binding.etPort.text?.toString()?.toIntOrNull() ?: 22
         
         val server = Server(
             name = name,
             host = host,
             port = port,
-            user = user
+            username = user
         )
         
-        serverRepository.addServer(server)
-        Toast.makeText(context, "Server added", Toast.LENGTH_SHORT).show()
-        finishSetup()
+        lifecycleScope.launch {
+            serverRepository.insertServer(server)
+            Toast.makeText(context, "Server added", Toast.LENGTH_SHORT).show()
+            finishSetup()
+        }
     }
 
     private fun finishSetup() {
-        val setupManager = SetupManager(activity as MainActivity)
         setupManager.completeSetup()
     }
 

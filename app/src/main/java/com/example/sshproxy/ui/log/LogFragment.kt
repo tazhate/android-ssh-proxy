@@ -35,11 +35,6 @@ class LogFragment : Fragment() {
         binding.fabCopy.setOnClickListener {
             copyLogToClipboard()
         }
-        
-        binding.fabClear.setOnClickListener {
-            AppLog.clear()
-            Toast.makeText(context, "Log cleared", Toast.LENGTH_SHORT).show()
-        }
     }
 
     private fun copyLogToClipboard() {

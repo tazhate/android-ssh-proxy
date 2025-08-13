@@ -1,43 +1,33 @@
 package com.example.sshproxy.data
 
 import android.content.Context
-import android.content.SharedPreferences
-import com.google.gson.Gson
-import com.google.gson.reflect.TypeToken
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.withContext
 
 class ServerRepository(context: Context) {
-    private val prefs: SharedPreferences = context.getSharedPreferences("servers_v2", Context.MODE_PRIVATE)
-    private val gson = Gson()
+    private val database = ServerDatabase.getDatabase(context)
+    private val serverDao = database.serverDao()
 
-    fun getServers(): List<Server> {
-        val json = prefs.getString("server_list", "[]")
-        val type = object : TypeToken<List<Server>>() {}.type
-        return gson.fromJson(json, type)
-    }
-
-    fun addServer(server: Server) {
-        val servers = getServers().toMutableList()
-        servers.add(server)
-        saveServers(servers)
-    }
-
-    fun updateServer(server: Server) {
-        val servers = getServers().toMutableList()
-        val index = servers.indexOfFirst { it.id == server.id }
-        if (index >= 0) {
-            servers[index] = server
-            saveServers(servers)
+    fun getAllServers(): Flow<List<Server>> = serverDao.getAllServers()
+    
+    fun getFavoriteServers(): Flow<List<Server>> = serverDao.getFavoriteServers()
+    
+    suspend fun insertServer(server: Server) {
+        withContext(Dispatchers.IO) {
+            serverDao.insertServer(server)
         }
     }
-
-    fun removeServer(serverId: String) {
-        val servers = getServers().toMutableList()
-        servers.removeAll { it.id == serverId }
-        saveServers(servers)
+    
+    suspend fun deleteServer(server: Server) {
+        withContext(Dispatchers.IO) {
+            serverDao.deleteServer(server)
+        }
     }
-
-    private fun saveServers(servers: List<Server>) {
-        val json = gson.toJson(servers)
-        prefs.edit().putString("server_list", json).apply()
+    
+    suspend fun getServerById(id: Long): Server? {
+        return withContext(Dispatchers.IO) {
+            serverDao.getServerById(id)
+        }
     }
 }
