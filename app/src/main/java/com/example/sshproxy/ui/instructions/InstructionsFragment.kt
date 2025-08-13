@@ -240,7 +240,7 @@ fi
 
 echo ""
 echo "Setup complete for user: ${'$'}USER"
-echo "Test with: ssh -N -L 8080:127.0.0.1:8118 ${'$'}USER@your-server"
+echo "Test with: ssh -N -L 8080:127.0.0.1:8118 $USER@your-server"
         """.trimIndent()
     }
 
