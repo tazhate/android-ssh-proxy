@@ -207,23 +207,14 @@ class SshProxyService : VpnService() {
                     val keyFile = resolvePrivateKeyFile(server.sshKeyId)
                         ?: throw IOException("SSH key not found. Please generate one.")
 
-                    // Try different key file providers for Ed25519 support
+                    // Try PKCS8KeyFile first (RSA/ECDSA), иначе показать ошибку для Ed25519
                     val keyProvider = try {
                         val pkcs8KeyFile = PKCS8KeyFile()
                         pkcs8KeyFile.init(keyFile)
-                        // Test if we can actually get the public key (this will fail for Ed25519)
-                        pkcs8KeyFile.public
                         pkcs8KeyFile
                     } catch (e: Exception) {
-                        AppLog.log("PKCS8KeyFile failed: ${e.message}, trying OpenSSHKeyFile")
-                        try {
-                            val opensshKeyFile = net.schmizz.sshj.userauth.keyprovider.OpenSSHKeyFile()
-                            opensshKeyFile.init(keyFile)
-                            opensshKeyFile
-                        } catch (e2: Exception) {
-                            AppLog.log("OpenSSHKeyFile failed: ${e2.message}")
-                            throw IOException("Unable to load SSH key: ${e.message}")
-                        }
+                        AppLog.log("PKCS8KeyFile failed: ${e.message}")
+                        throw IOException("Unable to load SSH key: ${e.message}. Ed25519 keys are not supported, use ECDSA or RSA.")
                     }
 
                     authPublickey(server.username, keyProvider)

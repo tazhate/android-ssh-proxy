@@ -52,6 +52,10 @@ class KeyGenerationFragment : Fragment() {
                 val generatedKey = keyManager.generateKeyPair("Default Key")
                 publicKey = generatedKey.publicKey
                 binding.tvPublicKey.text = publicKey
+
+                // Set generated key as active
+                val preferencesManager = com.example.sshproxy.data.PreferencesManager(requireContext())
+                preferencesManager.setActiveKeyId(generatedKey.id)
             } catch (e: Exception) {
                 binding.tvPublicKey.text = getString(com.example.sshproxy.R.string.error_generating_key_with_message, e.message)
                 Toast.makeText(context, getString(com.example.sshproxy.R.string.failed_to_generate_ssh_key), Toast.LENGTH_LONG).show()

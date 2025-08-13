@@ -41,13 +41,16 @@ class KeySetupFragment : Fragment() {
             // Generate key if it doesn't exist
             if (!keyManager.hasKeyPair()) {
                 currentKey = keyManager.generateKeyPair("Default Key")
+                // Set as active after generation
+                currentKey?.let { preferencesManager.setActiveKeyId(it.id) }
             } else {
                 // Get the first key as the current one for setup
                 currentKey = keyRepository.getAllKeys().first().firstOrNull()
+                // Set as active if not set
+                currentKey?.let { preferencesManager.setActiveKeyId(it.id) }
             }
 
             if (currentKey != null) {
-                preferencesManager.setActiveKeyId(currentKey!!.id)
                 binding.tvPublicKey.text = currentKey!!.publicKey
             } else {
                 binding.tvPublicKey.text = "Error: Could not load or generate a key."
