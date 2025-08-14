@@ -14,6 +14,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_MAX_RECONNECT_ATTEMPTS = "max_reconnect_attempts"
         private const val KEY_INITIAL_BACKOFF_MS = "initial_backoff_ms"
         private const val KEY_MAX_BACKOFF_MS = "max_backoff_ms"
+        private const val KEY_BACKOFF_MULTIPLIER = "backoff_multiplier"
         private const val KEY_THEME = "theme"
         private const val KEY_LANGUAGE = "language"
     }
@@ -76,6 +77,14 @@ class PreferencesManager(context: Context) {
 
     fun setMaxBackoffMs(backoffMs: Long) {
         prefs.edit().putLong(KEY_MAX_BACKOFF_MS, backoffMs).apply()
+    }
+
+    fun getBackoffMultiplier(): Float {
+        return prefs.getFloat(KEY_BACKOFF_MULTIPLIER, 2.0f)
+    }
+
+    fun setBackoffMultiplier(multiplier: Float) {
+        prefs.edit().putFloat(KEY_BACKOFF_MULTIPLIER, multiplier).apply()
     }
 
     // Theme

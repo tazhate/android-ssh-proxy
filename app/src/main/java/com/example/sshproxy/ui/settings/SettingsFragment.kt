@@ -54,6 +54,7 @@ class SettingsFragment : Fragment() {
             editMaxReconnectAttempts.setText(preferencesManager.getMaxReconnectAttempts().toString())
             editInitialBackoff.setText((preferencesManager.getInitialBackoffMs() / 1000).toString())
             editMaxBackoff.setText((preferencesManager.getMaxBackoffMs() / 1000).toString())
+            editBackoffMultiplier.setText(preferencesManager.getBackoffMultiplier().toString())
         }
     }
     
@@ -116,6 +117,9 @@ class SettingsFragment : Fragment() {
                 
                 val maxBackoff = editMaxBackoff.text.toString().toLongOrNull() ?: 300
                 preferencesManager.setMaxBackoffMs(maxBackoff * 1000)
+
+                val backoffMultiplier = editBackoffMultiplier.text.toString().toFloatOrNull() ?: 2.0f
+                preferencesManager.setBackoffMultiplier(backoffMultiplier)
             }
             
             Toast.makeText(context, getString(com.example.sshproxy.R.string.settings_saved), Toast.LENGTH_SHORT).show()

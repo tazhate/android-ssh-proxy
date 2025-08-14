@@ -159,6 +159,7 @@
     <string name="backoff_strategy">Backoff Strategy</string>
     <string name="initial_backoff">Initial backoff (seconds)</string>
     <string name="max_backoff">Max backoff (seconds)</string>
+    <string name="backoff_multiplier">Backoff Multiplier</string>
     <string name="save_settings">Save Settings</string>
     <string name="view_log">View Log</string>
     <string name="setup_instructions">Setup Instructions</string>

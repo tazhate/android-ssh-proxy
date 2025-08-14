@@ -119,7 +119,9 @@ class SshProxyService : VpnService() {
         connectionMonitor = ConnectionHealthMonitor(
             healthCheckIntervalMs = preferencesManager.getHealthCheckInterval(),
             maxReconnectAttempts = preferencesManager.getMaxReconnectAttempts(),
-            initialBackoffMs = preferencesManager.getInitialBackoffMs()
+            initialBackoffMs = preferencesManager.getInitialBackoffMs(),
+            maxBackoffMs = preferencesManager.getMaxBackoffMs(),
+            backoffMultiplier = preferencesManager.getBackoffMultiplier().toDouble()
         )
         
         // Observe connection state changes

@@ -155,6 +155,7 @@
     <string name="backoff_strategy">Стратегия отсрочки</string>
     <string name="initial_backoff">Начальная отсрочка (секунды)</string>
     <string name="max_backoff">Максимальная отсрочка (секунды)</string>
+    <string name="backoff_multiplier">Множитель отсрочки</string>
     <string name="save_settings">Сохранить настройки</string>
     <string name="view_log">Просмотр журнала</string>
     <string name="setup_instructions">Инструкции по установке</string>
