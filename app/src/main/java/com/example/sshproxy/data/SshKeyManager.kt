@@ -27,8 +27,11 @@ import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
 import java.util.*
 
+import android.annotation.SuppressLint
+
 class SshKeyManager(private val context: Context, private val keyRepository: KeyRepository) {
 
+    @SuppressLint("NewApi")
     enum class KeyType(val algorithm: String, val spec: Any?, val sshName: String) {
         RSA("RSA", 4096, "ssh-rsa"),
         ED25519("Ed25519", NamedParameterSpec.ED25519, "ssh-ed25519"),

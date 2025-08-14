@@ -23,6 +23,22 @@ class ServersAdapter(
     private val serverRepository: ServerRepository
 ) : ListAdapter<Server, ServersAdapter.ServerViewHolder>(ServerDiffCallback()) {
 
+    private val testResults = mutableMapOf<Long, ServerTestResult>()
+
+    fun updateTestResult(result: ServerTestResult) {
+        testResults[result.serverId] = result
+        // Find the position and notify only that item
+        val position = currentList.indexOfFirst { it.id == result.serverId }
+        if (position >= 0) {
+            notifyItemChanged(position)
+        }
+    }
+
+    fun clearTestResults() {
+        testResults.clear()
+        notifyDataSetChanged()
+    }
+
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): ServerViewHolder {
         val binding = ItemServerBinding.inflate(LayoutInflater.from(parent.context), parent, false)
         return ServerViewHolder(binding)
@@ -30,12 +46,14 @@ class ServersAdapter(
 
     override fun onBindViewHolder(holder: ServerViewHolder, position: Int) {
         val server = getItem(position)
-        holder.bind(server, onServerClick, onServerDelete, keyRepository, preferencesManager, serverRepository)
+        val testResult = testResults[server.id]
+        holder.bind(server, testResult, onServerClick, onServerDelete, keyRepository, preferencesManager, serverRepository)
     }
 
     class ServerViewHolder(private val binding: ItemServerBinding) : RecyclerView.ViewHolder(binding.root) {
         fun bind(
-            server: Server, 
+            server: Server,
+            testResult: ServerTestResult?,
             onClick: (Server) -> Unit, 
             onDelete: (Server) -> Unit,
             keyRepository: KeyRepository,
@@ -76,6 +94,35 @@ class ServersAdapter(
             
             binding.root.setOnClickListener { onClick(server) }
             binding.btnDelete.setOnClickListener { onDelete(server) }
+            
+            // Show test results
+            if (testResult != null) {
+                binding.layoutTestResult.visibility = android.view.View.VISIBLE
+                
+                when {
+                    testResult.isLoading -> {
+                        binding.tvTestResult.text = "Testing..."
+                        binding.progressBarTest.visibility = android.view.View.VISIBLE
+                        binding.viewQualityIndicator.setBackgroundColor(
+                            android.graphics.Color.GRAY
+                        )
+                    }
+                    testResult.isSuccess -> {
+                        binding.tvTestResult.text = "${testResult.quality.getDisplayName(binding.root.context)} (${testResult.latencyMs}ms)"
+                        binding.progressBarTest.visibility = android.view.View.GONE
+                        binding.viewQualityIndicator.setBackgroundColor(testResult.quality.color)
+                    }
+                    else -> {
+                        binding.tvTestResult.text = "Failed: ${testResult.errorMessage ?: "Unknown error"}"
+                        binding.progressBarTest.visibility = android.view.View.GONE
+                        binding.viewQualityIndicator.setBackgroundColor(
+                            android.graphics.Color.RED
+                        )
+                    }
+                }
+            } else {
+                binding.layoutTestResult.visibility = android.view.View.GONE
+            }
         }
     }
 

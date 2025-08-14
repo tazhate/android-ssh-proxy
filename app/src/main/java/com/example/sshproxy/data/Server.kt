@@ -21,6 +21,9 @@ data class Server(
     @ColumnInfo(name = "username")
     val username: String = "user",
 
+    @ColumnInfo(name = "http_proxy_port")
+    val httpProxyPort: Int = 8080, // HTTP proxy port
+
     @ColumnInfo(name = "ssh_key_id")
     val sshKeyId: String? = null, // ID SSH ключа для этого сервера
 

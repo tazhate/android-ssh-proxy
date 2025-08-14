@@ -1,5 +1,7 @@
 package com.example.sshproxy.data
 
+import android.content.Context
+import com.example.sshproxy.R
 import com.example.sshproxy.network.ConnectionQuality
 import com.example.sshproxy.network.PingResult
 import com.example.sshproxy.network.ServerStats
@@ -27,14 +29,14 @@ enum class ConnectionState {
 }
 
 // Extension functions for display
-fun ConnectionStatus.getDisplayStatus(): String {
+fun ConnectionStatus.getDisplayStatus(context: Context): String {
     return when (state) {
-        ConnectionState.DISCONNECTED -> "Отключено"
-        ConnectionState.CONNECTING -> "Подключение..."
-        ConnectionState.CONNECTED -> "Подключено"
-        ConnectionState.DISCONNECTING -> "Отключение..."
-        ConnectionState.RECONNECTING -> "Переподключение... ($reconnectionAttempt/$maxReconnectionAttempts)"
-        ConnectionState.ERROR -> "Ошибка"
+        ConnectionState.DISCONNECTED -> context.getString(R.string.connection_status_disconnected)
+        ConnectionState.CONNECTING -> context.getString(R.string.connection_status_connecting)
+        ConnectionState.CONNECTED -> context.getString(R.string.connection_status_connected)
+        ConnectionState.DISCONNECTING -> context.getString(R.string.connection_status_disconnecting)
+        ConnectionState.RECONNECTING -> context.getString(R.string.connection_status_reconnecting, reconnectionAttempt, maxReconnectionAttempts)
+        ConnectionState.ERROR -> context.getString(R.string.connection_status_error)
     }
 }
 
@@ -57,10 +59,10 @@ fun ConnectionStatus.getConnectionDuration(): String? {
     }
 }
 
-fun ConnectionStatus.getPingDisplay(): String? {
+fun ConnectionStatus.getPingDisplay(context: Context): String? {
     return when {
         latestPing == null -> null
-        !latestPing.isSuccessful -> "Нет ответа"
+        !latestPing.isSuccessful -> context.getString(R.string.connection_ping_no_response)
         else -> "${latestPing.latencyMs}мс"
     }
 }

@@ -49,8 +49,9 @@ class HomeViewModel(
         viewModelScope.launch {
             combine(
                 SshProxyService.connectionState,
+                SshProxyService.connectionStartTime,
                 _selectedServer
-            ) { connectionState, server ->
+            ) { connectionState, connectedSince, server ->
                 val newState = when (connectionState) {
                     SshProxyService.ConnectionState.DISCONNECTED -> ConnectionState.DISCONNECTED
                     SshProxyService.ConnectionState.CONNECTING -> ConnectionState.CONNECTING
@@ -61,13 +62,7 @@ class HomeViewModel(
                 _connectionStatus.value = _connectionStatus.value.copy(
                     state = newState,
                     server = server,
-                    connectedSince = if (newState == ConnectionState.CONNECTED && _connectionStatus.value.connectedSince == null) {
-                        System.currentTimeMillis()
-                    } else if (newState != ConnectionState.CONNECTED) {
-                        null
-                    } else {
-                        _connectionStatus.value.connectedSince
-                    }
+                    connectedSince = connectedSince
                 )
             }.collect { }
         }

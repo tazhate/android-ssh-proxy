@@ -48,6 +48,7 @@
     <string name="delete">Delete</string>
     <string name="server_details">Server Details</string>
     <string name="no_servers_found">No servers found. Please add one.</string>
+    <string name="test_all_servers">Test All Servers</string>
     <string name="server_name_hint">e.g. My VPS</string>
     <string name="server_host">Server Host</string>
     <string name="server_host_hint">e.g. 1.1.1.1 or my.server.com</string>
@@ -55,7 +56,13 @@
     <string name="host_hint">e.g. 1.1.1.1</string>
     <string name="port">Port</string>
     <string name="port_hint">e.g. 22</string>
-    <string name="username_hint">e.g. root</string>
+    <string name="http_proxy_port">HTTP Proxy Port</string>
+    <string name="http_proxy_port_hint">e.g. 8080</string>
+    
+    
+    
+    <string name="ssh_username">SSH Username</string>
+    <string name="ssh_username_hint">e.g. root</string>
     <string name="password_hint">Leave blank if using key</string>
 
     <!-- Keys Screen -->
@@ -191,4 +198,33 @@
     <string name="security_alerts_channel_description">Critical security warnings and alerts</string>
     <string name="host_key_changed_notification">SSH server %1$s key changed!</string>
     <string name="host_key_changed_notification_detail">The SSH host key for %1$s has changed. This could indicate a security issue. Tap to review.</string>
+
+    <!-- Connection Status -->
+    <string name="connection_status_disconnected">Disconnected</string>
+    <string name="connection_status_connecting">Connecting...</string>
+    <string name="connection_status_connected">Connected</string>
+    <string name="connection_status_disconnecting">Disconnecting...</string>
+    <string name="connection_status_reconnecting">Reconnecting... (%1$d/%2$d)</string>
+    <string name="connection_status_error">Error</string>
+    <string name="connection_ping_no_response">No response</string>
+
+    <!-- Connection Quality -->
+    <string name="quality_excellent">Excellent</string>
+    <string name="quality_good">Good</string>
+    <string name="quality_fair">Fair</string>
+    <string name="quality_poor">Poor</string>
+    <string name="quality_unknown">Unknown</string>
+
+    <!-- Test Connection Dialog -->
+    <string name="test_connection_title">Connection Test</string>
+    <string name="test_connection_checking">Testing connection...</string>
+    <string name="test_connection_completed">Tests completed</string>
+    <string name="test_connection_error">Error during tests</string>
+    <string name="test_connection_results">Test results:</string>
+    <string name="test_connection_overall">Overall result:</string>
+
+    <!-- Connection Status Column Headers -->
+    <string name="connection_ping">Ping</string>
+    <string name="connection_quality">Quality</string>
+    <string name="connection_time">Time</string>
 </resources>

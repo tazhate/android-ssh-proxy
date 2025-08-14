@@ -12,7 +12,7 @@ import kotlin.math.pow
  * Monitors SSH connection health and manages automatic reconnection with exponential backoff
  */
 class ConnectionHealthMonitor(
-    private val healthCheckIntervalMs: Long = 30_000L, // 30 seconds
+    private val healthCheckIntervalMs: Long = 10_000L, // 10 seconds - more aggressive monitoring
     private val maxReconnectAttempts: Int = 10,
     private val initialBackoffMs: Long = 1_000L, // 1 second
     private val maxBackoffMs: Long = 300_000L, // 5 minutes
@@ -54,7 +54,7 @@ class ConnectionHealthMonitor(
                 
                 if (_connectionState.value == ConnectionState.CONNECTED) {
                     try {
-                        val isAlive = withTimeout(5000L) { isConnectionAlive() }
+                        val isAlive = withTimeout(3000L) { isConnectionAlive() }
                         
                         if (!isAlive) {
                             handleConnectionLost(scope, onReconnect)

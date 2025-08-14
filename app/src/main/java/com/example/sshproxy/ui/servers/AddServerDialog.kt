@@ -39,9 +39,11 @@ class AddServerDialog(
             binding.etServerName.setText(it.name)
             binding.etUsername.setText(it.username)
             binding.etPort.setText(it.port.toString())
+            binding.etHttpProxyPort.setText(it.httpProxyPort.toString())
         } ?: run {
             binding.etUsername.setText("user")
             binding.etPort.setText("22")
+            binding.etHttpProxyPort.setText("8080")
         }
         
         // Load SSH keys
@@ -89,6 +91,7 @@ class AddServerDialog(
                 val name = binding.etServerName.text.toString().trim()
                 val host = binding.etHost.text.toString().trim()
                 val port = binding.etPort.text.toString().toIntOrNull() ?: 22
+                val httpProxyPort = binding.etHttpProxyPort.text.toString().toIntOrNull() ?: 8080
                 val username = binding.etUsername.text.toString().trim()
 
                 if (name.isNotEmpty() && host.isNotEmpty() && username.isNotEmpty()) {
@@ -96,11 +99,13 @@ class AddServerDialog(
                         name = name,
                         host = host,
                         port = port,
+                        httpProxyPort = httpProxyPort,
                         username = username
                     ) ?: Server(
                         name = name,
                         host = host,
                         port = port,
+                        httpProxyPort = httpProxyPort,
                         username = username
                     )
                     onSave(newServer)

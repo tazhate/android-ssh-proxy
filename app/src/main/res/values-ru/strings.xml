@@ -47,12 +47,19 @@
     <string name="delete">Удалить</string>
     <string name="server_details">Сведения о сервере</string>
     <string name="no_servers_found">Серверы не найдены. Пожалуйста, добавьте один.</string>
+    <string name="test_all_servers">Тестировать все сервера</string>
     <string name="server_name_hint">например, Мой VPS</string>
     <string name="host">Хост</string>
     <string name="host_hint">например, 1.1.1.1</string>
     <string name="port">Порт</string>
     <string name="port_hint">например, 22</string>
-    <string name="username_hint">например, root</string>
+    <string name="http_proxy_port">Порт HTTP прокси</string>
+    <string name="http_proxy_port_hint">например, 8080</string>
+    
+    
+    
+    <string name="ssh_username">SSH имя пользователя</string>
+    <string name="ssh_username_hint">например, root</string>
     <string name="password_hint">Оставьте пустым, если используете ключ</string>
 
     <!-- Keys Screen -->
@@ -176,4 +183,33 @@
     <string name="security_alerts_channel_description">Критические предупреждения и оповещения безопасности</string>
     <string name="host_key_changed_notification">SSH ключ сервера %1$s изменился!</string>
     <string name="host_key_changed_notification_detail">SSH ключ хоста %1$s изменился. Это может указывать на проблему безопасности. Нажмите для проверки.</string>
+
+    <!-- Connection Status -->
+    <string name="connection_status_disconnected">Отключено</string>
+    <string name="connection_status_connecting">Подключение...</string>
+    <string name="connection_status_connected">Подключено</string>
+    <string name="connection_status_disconnecting">Отключение...</string>
+    <string name="connection_status_reconnecting">Переподключение... (%1$d/%2$d)</string>
+    <string name="connection_status_error">Ошибка</string>
+    <string name="connection_ping_no_response">Нет ответа</string>
+
+    <!-- Connection Quality -->
+    <string name="quality_excellent">Отличное</string>
+    <string name="quality_good">Хорошее</string>
+    <string name="quality_fair">Среднее</string>
+    <string name="quality_poor">Плохое</string>
+    <string name="quality_unknown">Неизвестно</string>
+
+    <!-- Test Connection Dialog -->
+    <string name="test_connection_title">Тест соединения</string>
+    <string name="test_connection_checking">Проверяем соединение...</string>
+    <string name="test_connection_completed">Тесты завершены</string>
+    <string name="test_connection_error">Ошибка при выполнении тестов</string>
+    <string name="test_connection_results">Результаты тестов:</string>
+    <string name="test_connection_overall">Общий результат:</string>
+
+    <!-- Connection Status Column Headers -->
+    <string name="connection_ping">Пинг</string>
+    <string name="connection_quality">Качество</string>
+    <string name="connection_time">Время</string>
 </resources>

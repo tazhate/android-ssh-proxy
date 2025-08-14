@@ -47,7 +47,7 @@ class PreferencesManager(context: Context) {
     }
 
     fun getHealthCheckInterval(): Long {
-        return prefs.getLong(KEY_HEALTH_CHECK_INTERVAL, 30_000)
+        return prefs.getLong(KEY_HEALTH_CHECK_INTERVAL, 10_000)
     }
 
     fun setHealthCheckInterval(intervalMs: Long) {

@@ -1,6 +1,8 @@
 package com.example.sshproxy.network
 
+import android.content.Context
 import android.util.Log
+import com.example.sshproxy.R
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -29,8 +31,9 @@ data class ServerStats(
 class PingMonitor(
     private val hostname: String,
     private val port: Int,
-    private val intervalMs: Long = 10000, // 10 seconds
-    private val timeoutMs: Int = 5000 // 5 seconds
+    private val intervalMs: Long = 5000, // 5 seconds - more frequent pings
+    private val timeoutMs: Int = 3000, // 3 seconds - faster timeout
+    private val onConnectionIssue: ((consecutiveFailures: Int) -> Unit)? = null
 ) {
     companion object {
         private const val TAG = "PingMonitor"
@@ -39,6 +42,7 @@ class PingMonitor(
 
     private var monitoringJob: Job? = null
     private var isMonitoring = false
+    private var httpLatencyTester: HttpLatencyTester? = null
     
     private val _latestPing = MutableStateFlow<PingResult?>(null)
     val latestPing: StateFlow<PingResult?> = _latestPing.asStateFlow()
@@ -57,20 +61,47 @@ class PingMonitor(
             return
         }
         
-        Log.d(TAG, "Starting ping monitoring for $hostname:$port")
+        Log.d(TAG, "Starting HTTP latency monitoring via proxy")
         isMonitoring = true
         _isActive.value = true
+        
+        // Initialize HTTP latency tester
+        httpLatencyTester = HttpLatencyTester(
+            proxyHost = "127.0.0.1",
+            timeoutMs = timeoutMs
+        )
         
         monitoringJob = CoroutineScope(Dispatchers.IO + SupervisorJob()).launch {
             while (isMonitoring && currentCoroutineContext().isActive) {
                 try {
-                    val pingResult = performPing()
-                    _latestPing.value = pingResult
-                    updateStats(pingResult)
+                    // Perform both TCP ping (for quick connection check) and HTTP latency test
+                    val tcpPingResult = performTcpPing()
+                    
+                    // If TCP ping fails, don't bother with HTTP test
+                    val finalResult = if (!tcpPingResult.isSuccessful) {
+                        tcpPingResult
+                    } else {
+                        // Perform HTTP latency test for real-world performance
+                        val httpResult = httpLatencyTester?.performSingleTest()
+                        if (httpResult != null && httpResult.successfulTests > 0) {
+                            // Use HTTP latency as the primary metric
+                            PingResult(
+                                latencyMs = httpResult.averageLatencyMs,
+                                isSuccessful = httpResult.successRate >= 50f, // At least 50% success rate
+                                errorMessage = if (httpResult.successRate < 50f) "Poor HTTP connectivity: ${httpResult.successfulTests}/${httpResult.totalTests} successful" else null
+                            )
+                        } else {
+                            // Fallback to TCP ping if HTTP test fails completely
+                            tcpPingResult
+                        }
+                    }
+                    
+                    _latestPing.value = finalResult
+                    updateStats(finalResult)
                     
                     delay(intervalMs)
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error in ping monitoring", e)
+                    Log.e(TAG, "Error in latency monitoring", e)
                     delay(intervalMs) // Still delay to prevent tight loop
                 }
             }
@@ -78,18 +109,20 @@ class PingMonitor(
     }
     
     fun stopMonitoring() {
-        Log.d(TAG, "Stopping ping monitoring for $hostname:$port")
+        Log.d(TAG, "Stopping HTTP latency monitoring")
         isMonitoring = false
         _isActive.value = false
         monitoringJob?.cancel()
         monitoringJob = null
+        httpLatencyTester?.stopTesting()
+        httpLatencyTester = null
     }
     
     suspend fun performSinglePing(): PingResult {
-        return performPing()
+        return performTcpPing()
     }
     
-    private suspend fun performPing(): PingResult = withContext(Dispatchers.IO) {
+    private suspend fun performTcpPing(): PingResult = withContext(Dispatchers.IO) {
         var socket: Socket? = null
         
         try {
@@ -158,6 +191,11 @@ class PingMonitor(
             }
             
             _serverStats.value = newStats
+            
+            // Quick detection of connection issues - notify after 2 consecutive failures
+            if (newStats.consecutiveFailures >= 2) {
+                onConnectionIssue?.invoke(newStats.consecutiveFailures)
+            }
         }
     }
     
@@ -168,10 +206,10 @@ class PingMonitor(
         return when {
             latestPing == null -> ConnectionQuality.UNKNOWN
             !latestPing.isSuccessful || stats.consecutiveFailures > 2 -> ConnectionQuality.POOR
-            stats.averageLatencyMs > 500 -> ConnectionQuality.POOR
-            stats.averageLatencyMs > 200 -> ConnectionQuality.FAIR
-            stats.averageLatencyMs > 50 -> ConnectionQuality.GOOD
-            else -> ConnectionQuality.EXCELLENT
+            stats.averageLatencyMs > 1500 -> ConnectionQuality.POOR    // >1500ms = Poor
+            stats.averageLatencyMs > 1000 -> ConnectionQuality.FAIR    // 1000-1500ms = Fair  
+            stats.averageLatencyMs > 600 -> ConnectionQuality.GOOD     // 600-1000ms = Good
+            else -> ConnectionQuality.EXCELLENT                        // <600ms = Excellent
         }
     }
     
@@ -184,10 +222,20 @@ class PingMonitor(
     }
 }
 
-enum class ConnectionQuality(val displayName: String, val color: Int) {
-    EXCELLENT("Отличное", 0xFF4CAF50.toInt()), // Green
-    GOOD("Хорошее", 0xFF8BC34A.toInt()),       // Light Green
-    FAIR("Удовлетворительное", 0xFFFF9800.toInt()), // Orange
-    POOR("Плохое", 0xFFF44336.toInt()),        // Red
-    UNKNOWN("Неизвестно", 0xFF9E9E9E.toInt())  // Gray
+enum class ConnectionQuality(val color: Int) {
+    EXCELLENT(0xFF4CAF50.toInt()), // Green
+    GOOD(0xFF8BC34A.toInt()),      // Light Green
+    FAIR(0xFFFF9800.toInt()),      // Orange
+    POOR(0xFFF44336.toInt()),      // Red
+    UNKNOWN(0xFF9E9E9E.toInt());   // Gray
+    
+    fun getDisplayName(context: Context): String {
+        return when (this) {
+            EXCELLENT -> context.getString(R.string.quality_excellent)
+            GOOD -> context.getString(R.string.quality_good)
+            FAIR -> context.getString(R.string.quality_fair)
+            POOR -> context.getString(R.string.quality_poor)
+            UNKNOWN -> context.getString(R.string.quality_unknown)
+        }
+    }
 }

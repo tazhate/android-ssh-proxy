@@ -66,6 +66,10 @@ class SshProxyService : VpnService() {
         private val _isRunning = MutableStateFlow(false)
         val isRunning: StateFlow<Boolean> = _isRunning.asStateFlow()
         
+        // Connection start time tracking
+        private val _connectionStartTime = MutableStateFlow<Long?>(null)
+        val connectionStartTime: StateFlow<Long?> = _connectionStartTime.asStateFlow()
+        
         // Expose ping data
         private val _currentPingMonitor = MutableStateFlow<PingMonitor?>(null)
         val currentPingMonitor: StateFlow<PingMonitor?> = _currentPingMonitor.asStateFlow()
@@ -251,7 +255,7 @@ class SshProxyService : VpnService() {
 
                 // 2. Port forwarding
                 AppLog.log("Setting up port forwarding...")
-                setupPortForwarding()
+                setupPortForwarding(server)
 
                 // 3. Запускаем мониторинг сети
                 AppLog.log("Starting network monitoring...")
@@ -269,15 +273,29 @@ class SshProxyService : VpnService() {
                 withContext(Dispatchers.Main) {
                     _connectionState.value = ConnectionState.CONNECTED
                     _isRunning.value = true
+                    _connectionStartTime.value = System.currentTimeMillis()
                     updateNotification("Connected to ${server.name}")
-                    AppLog.log("Connection fully established")
+                    AppLog.log("Connection fully established at ${_connectionStartTime.value}")
                     
-                    // Start ping monitoring
+                    // Start ping monitoring with aggressive connection issue detection
                     pingMonitor?.stopMonitoring()
-                    pingMonitor = PingMonitor(server.host, server.port)
+                    pingMonitor = PingMonitor(
+                        server.host, 
+                        server.port,
+                        onConnectionIssue = { consecutiveFailures ->
+                            AppLog.log("Quick connection issue detected: $consecutiveFailures consecutive ping failures")
+                            // Trigger immediate connection check
+                            serviceScope.launch {
+                                if (!checkSshConnection()) {
+                                    AppLog.log("SSH connection confirmed dead, triggering reconnection")
+                                    connectionMonitor?.onConnectionLost()
+                                }
+                            }
+                        }
+                    )
                     pingMonitor?.startMonitoring()
                     _currentPingMonitor.value = pingMonitor
-                    AppLog.log("Started ping monitoring for ${server.host}:${server.port}")
+                    AppLog.log("Started aggressive ping monitoring for ${server.host}:${server.port}")
                 }
 
                 connectionMonitor?.onConnectionEstablished()
@@ -295,6 +313,7 @@ class SshProxyService : VpnService() {
                 withContext(Dispatchers.Main) {
                     _connectionState.value = ConnectionState.DISCONNECTED
                     _isRunning.value = false
+                    _connectionStartTime.value = null
                     updateNotification("Connection failed")
                     stopSelf()
                 }
@@ -302,10 +321,10 @@ class SshProxyService : VpnService() {
         }
     }
 
-    private fun setupPortForwarding() {
-        AppLog.log("Binding to local port 8080...")
-        serverSocket = ServerSocket(8080, 50, InetAddress.getByName("127.0.0.1"))
-        val params = Parameters("127.0.0.1", 8080, "127.0.0.1", 8118)
+    private fun setupPortForwarding(server: com.example.sshproxy.data.Server) {
+        AppLog.log("Binding to local port ${server.httpProxyPort}...")
+        serverSocket = ServerSocket(server.httpProxyPort, 50, InetAddress.getByName("127.0.0.1"))
+        val params = Parameters("127.0.0.1", server.httpProxyPort, "127.0.0.1", 8118)
         localPortForwarder = sshClient?.newLocalPortForwarder(params, serverSocket)
         
         // Start forwarding in background
@@ -335,7 +354,7 @@ class SshProxyService : VpnService() {
             .addAddress("fd00::1", 128)   // IPv6 local address
             .addDnsServer("8.8.8.8")      // IPv4 DNS
             .addDnsServer("2001:4860:4860::8888") // IPv6 Google DNS
-            .setHttpProxy(android.net.ProxyInfo.buildDirectProxy("127.0.0.1", 8080))
+            .setHttpProxy(android.net.ProxyInfo.buildDirectProxy("127.0.0.1", server.httpProxyPort))
             .setMtu(1500)
         
         // Настраиваем обход VPN для SSH соединения
@@ -468,7 +487,7 @@ class SshProxyService : VpnService() {
                     authPublickey(server.username, pk)
                 }
 
-                setupPortForwarding()
+                setupPortForwarding(server)
                 Log.i(TAG, "Reconnection successful")
                 true
             } catch (e: Exception) {
@@ -505,6 +524,7 @@ class SshProxyService : VpnService() {
         stopNetworkMonitoring()
         
         _connectionState.value = ConnectionState.DISCONNECTED
+        _connectionStartTime.value = null
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }
@@ -802,7 +822,7 @@ class SshProxyService : VpnService() {
                                     updateActiveNetworks()
                                     setupVpn()
                                     
-                                    // Обновляем состояние UI
+                                    // Обновляем состояние UI - время подключения сохраняется при переподключении
                                     _connectionState.value = ConnectionState.CONNECTED
                                     _isRunning.value = true
                                     updateNotification("Connected")
@@ -810,6 +830,7 @@ class SshProxyService : VpnService() {
                                     AppLog.log("SSH reconnection failed")
                                     _connectionState.value = ConnectionState.DISCONNECTED
                                     _isRunning.value = false
+                                    _connectionStartTime.value = null
                                     updateNotification("Connection failed")
                                 }
                             }
@@ -818,6 +839,7 @@ class SshProxyService : VpnService() {
                             isVpnTemporarilyDisabled = true
                             _connectionState.value = ConnectionState.DISCONNECTED
                             _isRunning.value = false
+                            _connectionStartTime.value = null
                             updateNotification("No network available")
                         }
                     } finally {
@@ -916,6 +938,7 @@ class SshProxyService : VpnService() {
     override fun onDestroy() {
         _connectionState.value = ConnectionState.DISCONNECTED
         _isRunning.value = false
+        _connectionStartTime.value = null
         connectionMonitor?.stopMonitoring()
         pingMonitor?.stopMonitoring()
         _currentPingMonitor.value = null

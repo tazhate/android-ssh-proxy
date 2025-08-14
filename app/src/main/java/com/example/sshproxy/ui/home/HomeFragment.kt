@@ -11,6 +11,9 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
@@ -26,11 +29,14 @@ import com.example.sshproxy.data.PreferencesManager
 import com.example.sshproxy.data.ServerRepository
 import com.example.sshproxy.data.SshKeyManager
 import com.example.sshproxy.data.ConnectionState
+import com.example.sshproxy.data.ConnectionStatus
 import com.example.sshproxy.data.getDisplayStatus
 import com.example.sshproxy.data.getConnectionDuration
 import com.example.sshproxy.data.getPingDisplay
 import com.example.sshproxy.data.getQualityColor
 import com.example.sshproxy.databinding.FragmentHomeBinding
+import com.example.sshproxy.network.HttpLatencyTester
+import com.example.sshproxy.network.ConnectionQuality
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
@@ -51,6 +57,8 @@ class HomeFragment : Fragment() {
     }
     private lateinit var keyManager: SshKeyManager
     private var blinkAnimator: ValueAnimator? = null
+    private var durationUpdateHandler = Handler(Looper.getMainLooper())
+    private var durationUpdateRunnable: Runnable? = null
 
     private val vpnPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.StartActivityForResult()
@@ -74,6 +82,21 @@ class HomeFragment : Fragment() {
         
         setupUI()
         observeViewModel()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Resume duration updates if connected
+        val currentStatus = viewModel.connectionStatus.value
+        if (currentStatus.state == ConnectionState.CONNECTED) {
+            startDurationUpdates(currentStatus)
+        }
+    }
+
+    override fun onPause() {
+        super.onPause()
+        // Pause duration updates to save battery
+        stopDurationUpdates()
     }
 
     private fun setupUI() {
@@ -114,16 +137,19 @@ class HomeFragment : Fragment() {
                 binding.btnConnect.isSelected = isConnected
                 
                 // Update connection status text
-                binding.tvConnectionStatus.text = status.getDisplayStatus()
+                binding.tvConnectionStatus.text = status.getDisplayStatus(requireContext())
                 
                 // Show/hide connection info card
                 binding.cardConnectionInfo.visibility = if (isConnected) View.VISIBLE else View.GONE
                 
                 // Update ping information
                 if (isConnected) {
-                    binding.tvPing.text = status.getPingDisplay() ?: "--"
-                    binding.tvQuality.text = status.connectionQuality.displayName
+                    binding.tvPing.text = status.getPingDisplay(requireContext()) ?: "--"
+                    binding.tvQuality.text = status.connectionQuality.getDisplayName(requireContext())
                     binding.tvConnectionDuration.text = status.getConnectionDuration() ?: "--"
+                    
+                    // Start periodic duration updates
+                    startDurationUpdates(status)
                     
                     // Update quality indicator color
                     binding.viewQualityIndicator.setBackgroundTintList(
@@ -131,14 +157,21 @@ class HomeFragment : Fragment() {
                     )
                     binding.viewQualityIndicator.setBackgroundColor(status.getQualityColor())
                     
-                    // Update ping text color based on latency
+                    // Update ping text color based on HTTP latency (matched to quality logic)
                     val pingColor = when {
                         status.latestPing?.isSuccessful != true -> ContextCompat.getColor(requireContext(), R.color.error)
-                        (status.latestPing.latencyMs) > 500 -> ContextCompat.getColor(requireContext(), R.color.warning)
-                        (status.latestPing.latencyMs) > 200 -> ContextCompat.getColor(requireContext(), R.color.fair)
-                        else -> ContextCompat.getColor(requireContext(), R.color.good)
+                        (status.latestPing.latencyMs) > 1500 -> ContextCompat.getColor(requireContext(), R.color.error)   // >1500ms = Red (Poor)
+                        (status.latestPing.latencyMs) > 1000 -> ContextCompat.getColor(requireContext(), R.color.warning) // 1000-1500ms = Orange (Fair)
+                        (status.latestPing.latencyMs) > 600 -> ContextCompat.getColor(requireContext(), R.color.good)     // 600-1000ms = Green (Good)
+                        else -> ContextCompat.getColor(requireContext(), R.color.good)                                   // <600ms = Green (Excellent)
                     }
                     binding.tvPing.setTextColor(pingColor)
+                    
+                    // Update quality text color matching ping color
+                    binding.tvQuality.setTextColor(pingColor)
+                } else {
+                    // Stop duration updates when disconnected
+                    stopDurationUpdates()
                 }
                 
                 // Manage blinking animation
@@ -312,59 +345,192 @@ class HomeFragment : Fragment() {
     }
     
     private fun testConnection() {
+        // Create and show the test dialog
+        val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_test_connection, null)
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setView(dialogView)
+            .setCancelable(false)
+            .create()
+
+        val tvTestStatus = dialogView.findViewById<TextView>(R.id.tvTestStatus)
+        val progressBar = dialogView.findViewById<ProgressBar>(R.id.progressBar)
+        val layoutResults = dialogView.findViewById<LinearLayout>(R.id.layoutResults)
+        val layoutTestResults = dialogView.findViewById<LinearLayout>(R.id.layoutTestResults)
+        val viewOverallIndicator = dialogView.findViewById<View>(R.id.viewOverallIndicator)
+        val tvOverallResult = dialogView.findViewById<TextView>(R.id.tvOverallResult)
+        val btnClose = dialogView.findViewById<com.google.android.material.button.MaterialButton>(R.id.btnClose)
+
+        btnClose.setOnClickListener { dialog.dismiss() }
+        
+        dialog.show()
+
         viewLifecycleOwner.lifecycleScope.launch {
             try {
-                // Устанавливаем состояние тестирования
-                binding.btnTest.isEnabled = false
-                binding.btnTest.text = getString(R.string.testing_connection)
-                binding.btnTest.setIconTintResource(android.R.color.darker_gray)
-                
-                val isConnected = withContext(Dispatchers.IO) {
-                    try {
-                        val url = URL("https://ifconfig.me")
-                        val connection = url.openConnection() as HttpURLConnection
-                        connection.connectTimeout = 10000
-                        connection.readTimeout = 10000
-                        connection.requestMethod = "GET"
-                        
-                        val responseCode = connection.responseCode
-                        connection.disconnect()
-                        
-                        responseCode == 200
-                    } catch (e: Exception) {
-                        false
-                    }
-                }
-                
-                // Обновляем UI на основе результата
-                if (isConnected) {
-                    binding.btnTest.text = getString(R.string.test_passed)
-                    binding.btnTest.setIconTintResource(R.color.green_success)
-                    Toast.makeText(context, getString(R.string.internet_connection_working), Toast.LENGTH_SHORT).show()
+                // Create HTTP latency tester
+                val selectedServer = viewModel.selectedServer.value
+                val isVpnActive = SshProxyService.connectionState.value == SshProxyService.ConnectionState.CONNECTED
+                val latencyTester = if (isVpnActive) {
+                    HttpLatencyTester(
+                        proxyHost = "127.0.0.1",
+                        proxyPort = selectedServer?.httpProxyPort ?: 8080,
+                        timeoutMs = 10000
+                    )
                 } else {
-                    binding.btnTest.text = getString(R.string.test_failed)
-                    binding.btnTest.setIconTintResource(R.color.red_error)
-                    Toast.makeText(context, getString(R.string.no_internet_connection), Toast.LENGTH_SHORT).show()
+                    HttpLatencyTester(
+                        proxyHost = null,
+                        proxyPort = null,
+                        timeoutMs = 10000
+                    )
+                }
+
+                // Start testing
+                tvTestStatus.text = getString(R.string.test_connection_checking)
+                progressBar.progress = 10
+
+                val result = latencyTester.performSingleTest()
+                
+                // Update progress
+                progressBar.progress = 100
+                tvTestStatus.text = getString(R.string.test_connection_completed)
+                
+                // Show results after a short delay
+                kotlinx.coroutines.delay(500)
+                layoutResults.visibility = View.VISIBLE
+                
+                // Clear any existing results
+                layoutTestResults.removeAllViews()
+                
+                // Add individual test results
+                result.individualResults.forEach { testResult ->
+                    val resultView = createTestResultView(testResult)
+                    layoutTestResults.addView(resultView)
                 }
                 
-                // Возвращаем исходное состояние через 3 секунды
-                kotlinx.coroutines.delay(3000)
-                binding.btnTest.text = getString(R.string.test_connection)
-                binding.btnTest.setIconTintResource(R.color.icon_default)
-                binding.btnTest.isEnabled = true
+                // Determine overall quality
+                val overallQuality = when {
+                    result.successRate < 50f -> ConnectionQuality.POOR
+                    result.averageLatencyMs > 1500 -> ConnectionQuality.POOR
+                    result.averageLatencyMs > 1000 -> ConnectionQuality.FAIR  
+                    result.averageLatencyMs > 600 -> ConnectionQuality.GOOD
+                    else -> ConnectionQuality.EXCELLENT
+                }
                 
+                // Update overall result
+                viewOverallIndicator.setBackgroundColor(overallQuality.color)
+                tvOverallResult.text = "${overallQuality.getDisplayName(requireContext())} (${result.averageLatencyMs}ms)"
+                tvOverallResult.setTextColor(overallQuality.color)
+
             } catch (e: Exception) {
-                // Обработка ошибок
-                binding.btnTest.text = getString(R.string.test_failed)
-                binding.btnTest.setIconTintResource(R.color.red_error)
-                binding.btnTest.isEnabled = true
-                Toast.makeText(context, getString(R.string.test_failed_with_error, e.message), Toast.LENGTH_SHORT).show()
+                progressBar.progress = 100
+                tvTestStatus.text = getString(R.string.test_connection_error)
+                layoutResults.visibility = View.VISIBLE
                 
-                kotlinx.coroutines.delay(3000)
-                binding.btnTest.text = getString(R.string.test_connection)
-                binding.btnTest.setIconTintResource(R.color.icon_default)
+                val errorView = TextView(requireContext()).apply {
+                    text = "Ошибка: ${e.message ?: "Неизвестная ошибка"}"
+                    textSize = 14f
+                    setTextColor(ContextCompat.getColor(requireContext(), R.color.error))
+                    setPadding(16, 8, 16, 8)
+                }
+                layoutTestResults.addView(errorView)
+                
+                viewOverallIndicator.setBackgroundColor(ConnectionQuality.POOR.color)
+                tvOverallResult.text = "Ошибка теста"
+                tvOverallResult.setTextColor(ConnectionQuality.POOR.color)
             }
         }
+    }
+
+    private fun createTestResultView(testResult: com.example.sshproxy.network.HttpLatencyResult): View {
+        val resultLayout = LinearLayout(requireContext()).apply {
+            orientation = LinearLayout.HORIZONTAL
+            layoutParams = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply {
+                setMargins(0, 8, 0, 8)
+            }
+            gravity = android.view.Gravity.CENTER_VERTICAL
+            setPadding(0, 8, 0, 8)
+        }
+
+        // Status indicator
+        val indicator = View(requireContext()).apply {
+            layoutParams = LinearLayout.LayoutParams(8, 8).apply {
+                setMargins(0, 0, 12, 0)
+            }
+            background = ContextCompat.getDrawable(requireContext(), R.drawable.circle_shape)
+            setBackgroundColor(
+                if (testResult.isSuccessful) {
+                    when {
+                        testResult.latencyMs > 1500 -> ContextCompat.getColor(requireContext(), R.color.error)
+                        testResult.latencyMs > 1000 -> ContextCompat.getColor(requireContext(), R.color.warning) 
+                        testResult.latencyMs > 600 -> ContextCompat.getColor(requireContext(), R.color.good)
+                        else -> ContextCompat.getColor(requireContext(), R.color.good)
+                    }
+                } else {
+                    ContextCompat.getColor(requireContext(), R.color.error)
+                }
+            )
+        }
+
+        // URL and result text
+        val textView = TextView(requireContext()).apply {
+            layoutParams = LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f)
+            textSize = 14f
+            val hostname = testResult.url.replace("https://", "").replace("http://", "").split("/")[0]
+            text = if (testResult.isSuccessful) {
+                "$hostname: ${testResult.latencyMs}ms"
+            } else {
+                "$hostname: ${testResult.errorMessage ?: "Ошибка"}"
+            }
+            setTextColor(
+                if (testResult.isSuccessful) {
+                    // Get color from current theme
+                    val typedValue = android.util.TypedValue()
+                    requireContext().theme.resolveAttribute(com.google.android.material.R.attr.colorOnSurface, typedValue, true)
+                    typedValue.data
+                } else {
+                    ContextCompat.getColor(requireContext(), R.color.error)
+                }
+            )
+        }
+
+        resultLayout.addView(indicator)
+        resultLayout.addView(textView)
+        
+        return resultLayout
+    }
+
+    private fun startDurationUpdates(@Suppress("UNUSED_PARAMETER") initialStatus: ConnectionStatus) {
+        // Stop any existing updates
+        stopDurationUpdates()
+        
+        // Create a runnable that updates the duration every second
+        durationUpdateRunnable = object : Runnable {
+            override fun run() {
+                if (_binding != null) {
+                    // Get current status to ensure we have the latest connection info
+                    val currentStatus = viewModel.connectionStatus.value
+                    if (currentStatus.state == ConnectionState.CONNECTED && currentStatus.connectedSince != null) {
+                        val currentDuration = currentStatus.getConnectionDuration()
+                        if (currentDuration != null) {
+                            binding.tvConnectionDuration.text = currentDuration
+                        }
+                        // Schedule next update
+                        durationUpdateHandler.postDelayed(this, 1000)
+                    }
+                }
+            }
+        }
+        // Start the updates
+        durationUpdateHandler.post(durationUpdateRunnable!!)
+    }
+    
+    private fun stopDurationUpdates() {
+        durationUpdateRunnable?.let { runnable ->
+            durationUpdateHandler.removeCallbacks(runnable)
+        }
+        durationUpdateRunnable = null
     }
 
     private fun loadCachedIpInfo() {
@@ -460,6 +626,11 @@ class HomeFragment : Fragment() {
         blinkingHandler.removeCallbacksAndMessages(null)
         blinkAnimator?.cancel()
         blinkAnimator = null
+        
+        // Stop duration updates
+        stopDurationUpdates()
+        durationUpdateHandler.removeCallbacksAndMessages(null)
+        
         _binding = null
     }
 }

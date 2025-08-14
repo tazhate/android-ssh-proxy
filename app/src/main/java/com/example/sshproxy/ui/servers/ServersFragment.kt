@@ -13,9 +13,13 @@ import com.example.sshproxy.data.ServerRepository
 import com.example.sshproxy.data.KeyRepository
 import com.example.sshproxy.data.PreferencesManager
 import com.example.sshproxy.databinding.FragmentServersBinding
+import com.example.sshproxy.network.ConnectionQuality
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.delay
 
 class ServersFragment : Fragment() {
     private var _binding: FragmentServersBinding? = null
@@ -40,6 +44,10 @@ class ServersFragment : Fragment() {
             AddServerDialog { server ->
                 viewModel.insertServer(server)
             }.show(parentFragmentManager, "add_server")
+        }
+        
+        binding.btnTestAllServers.setOnClickListener {
+            testAllServers()
         }
         
         observeServers()
@@ -81,10 +89,47 @@ class ServersFragment : Fragment() {
                 adapter.submitList(servers)
                 binding.emptyView.visibility = if (servers.isEmpty()) View.VISIBLE else View.GONE
                 binding.recyclerView.visibility = if (servers.isEmpty()) View.GONE else View.VISIBLE
+                binding.btnTestAllServers.visibility = if (servers.isEmpty()) View.GONE else View.VISIBLE
             }
         }
     }
-    
+
+    private fun testAllServers() {
+        val servers = adapter.currentList
+        if (servers.isEmpty()) {
+            return
+        }
+        
+        // Disable test button during testing
+        binding.btnTestAllServers.isEnabled = false
+        binding.btnTestAllServers.text = "Testing..."
+        
+        // Clear previous test results
+        adapter.clearTestResults()
+        
+        val serverTester = ServerTester(requireContext())
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            try {
+                // Test each server sequentially
+                for (server in servers) {
+                    // Show loading state
+                    adapter.updateTestResult(ServerTestResult.loading(server.id))
+                    
+                    // Perform the test
+                    val result = serverTester.test(server)
+                    adapter.updateTestResult(result)
+                    
+                    // Small delay between tests to avoid overwhelming the network
+                    delay(500)
+                }
+            } finally {
+                // Re-enable test button
+                binding.btnTestAllServers.isEnabled = true
+                binding.btnTestAllServers.text = getString(com.example.sshproxy.R.string.test_all_servers)
+            }
+        }
+    }
 
     override fun onDestroyView() {
         super.onDestroyView()
