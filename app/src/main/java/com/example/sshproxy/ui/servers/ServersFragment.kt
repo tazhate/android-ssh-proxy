@@ -26,7 +26,10 @@ class ServersFragment : Fragment() {
     private val binding get() = _binding!!
     
     private val viewModel: ServersViewModel by viewModels {
-        ServersViewModelFactory(ServerRepository(requireContext()))
+        ServersViewModelFactory(
+            ServerRepository(requireContext()),
+            PreferencesManager(requireContext())
+        )
     }
     private lateinit var adapter: ServersAdapter
 

@@ -17,6 +17,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.delay
 import android.os.Handler
 import android.os.Looper
+import android.view.View
 import java.util.Timer
 import java.util.TimerTask
 
@@ -38,44 +39,54 @@ class VPNStatusWidgetProvider : AppWidgetProvider() {
         }
         fun updateAppWidget(context: Context, appWidgetManager: AppWidgetManager, appWidgetId: Int) {
             val views = RemoteViews(context.packageName, R.layout.widget_vpn_status)
-
             val prefs = context.getSharedPreferences("ssh_proxy_prefs", Context.MODE_PRIVATE)
-            
-            // Проверяем реальное состояние VPN Service
-            val isServiceRunning = isVpnServiceRunning(context)
-            
-            // Если сервис не запущен, сбрасываем флаги
-            if (!isServiceRunning) {
-                prefs.edit()
-                    .putBoolean("vpn_running", false)
-                    .putBoolean("vpn_connecting", false)
-                    .apply()
-            }
-            
-            val isVpnRunning = prefs.getBoolean("vpn_running", false) && isServiceRunning
-            val isConnecting = prefs.getBoolean("vpn_connecting", false)
-            lastVpnConnected = isVpnRunning
-            
-            android.util.Log.d("VPNStatusWidget", "updateAppWidget: isVpnRunning=$isVpnRunning, isConnecting=$isConnecting, isBlinkOn=$isBlinkOn, serviceRunning=$isServiceRunning")
+            val serverId = prefs.getLong("active_server_id", -1)
 
-            val circleColor = when {
-                isConnecting -> {
-                    // Blinking when connecting
-                    if (isBlinkOn) {
-                        context.getColor(R.color.widget_connecting)
-                    } else {
+            if (serverId == -1L) {
+                views.setViewVisibility(R.id.tv_widget_message, View.VISIBLE)
+                views.setViewVisibility(R.id.iv_status_circle, View.GONE)
+                views.setViewVisibility(R.id.iv_ssh_icon, View.GONE)
+            } else {
+                views.setViewVisibility(R.id.tv_widget_message, View.GONE)
+                views.setViewVisibility(R.id.iv_status_circle, View.VISIBLE)
+                views.setViewVisibility(R.id.iv_ssh_icon, View.VISIBLE)
+
+                // Проверяем реальное состояние VPN Service
+                val isServiceRunning = isVpnServiceRunning(context)
+                
+                // Если сервис не запущен, сбрасываем флаги
+                if (!isServiceRunning) {
+                    prefs.edit()
+                        .putBoolean("vpn_running", false)
+                        .putBoolean("vpn_connecting", false)
+                        .apply()
+                }
+                
+                val isVpnRunning = prefs.getBoolean("vpn_running", false) && isServiceRunning
+                val isConnecting = prefs.getBoolean("vpn_connecting", false)
+                lastVpnConnected = isVpnRunning
+                
+                android.util.Log.d("VPNStatusWidget", "updateAppWidget: isVpnRunning=$isVpnRunning, isConnecting=$isConnecting, isBlinkOn=$isBlinkOn, serviceRunning=$isServiceRunning")
+
+                val circleColor = when {
+                    isConnecting -> {
+                        // Blinking when connecting
+                        if (isBlinkOn) {
+                            context.getColor(R.color.widget_connecting)
+                        } else {
+                            context.getColor(R.color.widget_disconnected)
+                        }
+                    }
+                    isVpnRunning -> {
+                        context.getColor(R.color.widget_connected)
+                    }
+                    else -> {
                         context.getColor(R.color.widget_disconnected)
                     }
                 }
-                isVpnRunning -> {
-                    context.getColor(R.color.widget_connected)
-                }
-                else -> {
-                    context.getColor(R.color.widget_disconnected)
-                }
+                
+                views.setInt(R.id.iv_status_circle, "setColorFilter", circleColor)
             }
-            
-            views.setInt(R.id.iv_status_circle, "setColorFilter", circleColor)
             
             // The icon and background remain static
             views.setInt(R.id.iv_ssh_icon, "setImageResource", R.drawable.ic_ssh)
@@ -144,7 +155,7 @@ class VPNStatusWidgetProvider : AppWidgetProvider() {
             val isVpnRunning = prefs.getBoolean("vpn_running", false)
             val serverId = prefs.getLong("active_server_id", -1)
             if (serverId == -1L && !isVpnRunning) {
-                android.widget.Toast.makeText(context, "Please select a server in the app first", android.widget.Toast.LENGTH_SHORT).show()
+                // Do nothing if no server is selected
                 return
             }
             android.util.Log.d("VPNStatusWidget", "isVpnRunning=$isVpnRunning, serverId=$serverId")

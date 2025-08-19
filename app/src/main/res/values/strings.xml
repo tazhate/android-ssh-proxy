@@ -243,4 +243,5 @@
     <string name="connection_ping">Ping</string>
     <string name="connection_quality">Quality</string>
     <string name="connection_time">Time</string>
+    <string name="widget_select_server">Select a server</string>
 </resources>

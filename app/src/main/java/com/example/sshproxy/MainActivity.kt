@@ -21,6 +21,10 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.lifecycle.lifecycleScope
+import com.example.sshproxy.data.ServerRepository
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainNewBinding
@@ -43,6 +47,15 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         setupManager = SetupManager(this)
+
+        // Auto-select server if there is only one
+        lifecycleScope.launch {
+            val serverRepository = ServerRepository(this@MainActivity)
+            val servers = serverRepository.getAllServers().first()
+            if (servers.size == 1) {
+                preferencesManager.setActiveServerId(servers.first().id)
+            }
+        }
         
         // Handle security alerts from notifications
         handleSecurityIntent()

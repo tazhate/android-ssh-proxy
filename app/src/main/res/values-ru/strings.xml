@@ -247,4 +247,5 @@
     <string name="connection_ping">Пинг</string>
     <string name="connection_quality">Качество</string>
     <string name="connection_time">Время</string>
+    <string name="widget_select_server">Выберите сервер</string>
 </resources>
