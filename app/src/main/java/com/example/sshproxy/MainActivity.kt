@@ -16,6 +16,11 @@ import com.google.android.material.navigation.NavigationBarView
 import com.example.sshproxy.data.PreferencesManager
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
+import android.app.Activity
+import android.content.Intent
+import android.net.VpnService
+import android.os.Build
+import androidx.activity.result.contract.ActivityResultContracts
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainNewBinding
@@ -169,5 +174,82 @@ class MainActivity : AppCompatActivity() {
             android.util.Log.d("MainActivity", "Host key change detected for $hostname:$port")
             // TODO: Get actual fingerprints and show HostKeyChangeDialog
         }
+    }
+    
+    private val vpnPermissionLauncher = registerForActivityResult(
+        ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            // VPN permission granted, start VPN
+            startVpnFromWidget()
+        } else {
+            // VPN permission denied
+            android.util.Log.d("MainActivity", "VPN permission denied")
+        }
+    }
+    
+    private fun handleVpnStartIntent() {
+        android.util.Log.d("MainActivity", "handleVpnStartIntent: action=${intent?.action}")
+        if (intent?.action == "com.example.sshproxy.ACTION_START_VPN_FROM_WIDGET") {
+            val serverId = intent.getLongExtra("server_id", -1)
+            android.util.Log.d("MainActivity", "handleVpnStartIntent: serverId=$serverId")
+            if (serverId != -1L) {
+                // Save server ID for later use
+                getSharedPreferences("ssh_proxy_prefs", MODE_PRIVATE).edit()
+                    .putLong("pending_widget_server_id", serverId)
+                    .apply()
+                
+                // Check if VPN permission is needed
+                val vpnIntent = VpnService.prepare(this)
+                if (vpnIntent != null) {
+                    // Permission needed
+                    vpnPermissionLauncher.launch(vpnIntent)
+                } else {
+                    // Permission already granted
+                    startVpnFromWidget()
+                }
+            }
+        }
+    }
+    
+    private fun startVpnFromWidget() {
+        android.util.Log.d("MainActivity", "startVpnFromWidget called")
+        val prefs = getSharedPreferences("ssh_proxy_prefs", MODE_PRIVATE)
+        val serverId = prefs.getLong("pending_widget_server_id", -1)
+        android.util.Log.d("MainActivity", "startVpnFromWidget: serverId=$serverId")
+        
+        if (serverId != -1L) {
+            // Clear pending server ID and set connecting state
+            prefs.edit()
+                .remove("pending_widget_server_id")
+                .putBoolean("vpn_connecting", true)
+                .apply()
+            
+            // Update widget to show connecting state
+            val updateIntent = Intent("android.appwidget.action.APPWIDGET_UPDATE")
+            updateIntent.setPackage(packageName)
+            sendBroadcast(updateIntent)
+            
+            // Start VPN service
+            val serviceIntent = Intent(this, SshProxyService::class.java).apply {
+                action = SshProxyService.ACTION_START
+                putExtra(SshProxyService.EXTRA_SERVER_ID, serverId)
+            }
+            
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(serviceIntent)
+            } else {
+                startService(serviceIntent)
+            }
+            
+            // Close activity to return to previous app
+            finish()
+        }
+    }
+    
+    override fun onNewIntent(intent: Intent?) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleVpnStartIntent()
     }
 }

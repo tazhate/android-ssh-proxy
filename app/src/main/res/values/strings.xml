@@ -1,5 +1,20 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Backup/Import -->
+    <string name="backup_export_title">Export backup</string>
+    <string name="backup_export_file">Export to file</string>
+    <string name="backup_export_text">Show as text</string>
+    <string name="backup_export_text_title">Backup (copy and save)</string>
+    <string name="backup_export_copy">Copy</string>
+    <string name="backup_export_copied">Backup copied to clipboard</string>
+    <string name="backup_export_success">Backup exported</string>
+    <string name="backup_import_title">Import backup</string>
+    <string name="backup_import_file">Import from file</string>
+    <string name="backup_import_text">Paste text</string>
+    <string name="backup_import_text_title">Paste backup text</string>
+    <string name="backup_import_text_hint">Paste backup here</string>
+    <string name="backup_import_success">Backup imported</string>
+    <string name="backup_import_error">Import failed: invalid or corrupted backup</string>
     <string name="app_name">SSH Proxy</string>
 
     <!-- Home Screen -->

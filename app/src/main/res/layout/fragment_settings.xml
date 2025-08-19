@@ -195,6 +195,23 @@
             android:text="@string/view_log"
             android:layout_marginTop="8dp" />
 
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnBackup"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/backup_export_title"
+            android:layout_marginTop="8dp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnImport"
+            style="@style/Widget.Material3.Button.OutlinedButton"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/backup_import_title"
+            android:layout_marginTop="8dp" />
+
         <com.google.android.material.button.MaterialButton
             android:id="@+id/btnSetup"
             style="@style/Widget.Material3.Button.OutlinedButton"

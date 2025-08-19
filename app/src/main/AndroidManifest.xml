@@ -35,6 +35,16 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+        
+        <!-- Transparent activity for VPN permission from widget -->
+        <activity
+            android:name=".VpnPermissionActivity"
+            android:exported="false"
+            android:theme="@style/Theme.SshProxy.Transparent"
+            android:excludeFromRecents="true"
+            android:taskAffinity=""
+            android:launchMode="singleInstance">
+        </activity>
 
         <service
             android:name=".SshProxyService"
@@ -48,6 +58,15 @@
             </intent-filter>
         </service>
             
+    <receiver android:name="com.example.sshproxy.widget.VPNStatusWidgetProvider" android:exported="true" tools:ignore="ExportedReceiver">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="com.example.sshproxy.widget.ACTION_TOGGLE_VPN" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_vpn_status" />
+        </receiver>
     </application>
 
 </manifest>

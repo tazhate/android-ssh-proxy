@@ -178,6 +178,7 @@ object IpLocationService {
      * This forces fresh IP detection on the next request
      */
     fun invalidateCacheOnVpnChange(isVpnConnected: Boolean) {
+        android.util.Log.d(TAG, "invalidateCacheOnVpnChange called, isVpnConnected: $isVpnConnected")
         if (lastKnownVpnState != isVpnConnected) {
             Log.d(TAG, "VPN state changed: $lastKnownVpnState -> $isVpnConnected, invalidating IP cache")
             cachedIpLocation = null

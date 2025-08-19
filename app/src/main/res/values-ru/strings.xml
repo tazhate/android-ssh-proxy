@@ -1,5 +1,22 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- Backup/Import -->
+    <string name="backup_export_title">Экспорт бэкапа</string>
+    <string name="backup_export_file">Экспорт в файл</string>
+    <string name="backup_export_text">Показать как текст</string>
+    <string name="backup_export_text_title">Бэкап (скопируйте и сохраните)</string>
+    <string name="backup_export_copy">Скопировать</string>
+    <string name="backup_export_copied">Бэкап скопирован в буфер</string>
+    <string name="backup_export_success">Бэкап экспортирован</string>
+    <string name="backup_import_title">Импорт бэкапа</string>
+    <string name="backup_import_file">Импорт из файла</string>
+    <string name="backup_import_text">Вставить текст</string>
+    <string name="backup_import_text_title">Вставьте текст бэкапа</string>
+    <string name="backup_import_text_hint">Вставьте бэкап сюда</string>
+    <string name="backup_import_success">Бэкап импортирован</string>
+    <string name="backup_import_error">Ошибка импорта: некорректный или повреждённый бэкап</string>
+    <string name="server_host_hint">например, 1.1.1.1 или my.server.com</string>
+    <string name="server_host">Хост сервера</string>
     <string name="app_name">SSH Proxy</string>
 
     <!-- Home Screen -->
@@ -43,6 +60,7 @@
     <string name="save">Сохранить</string>
     <string name="cancel">Отмена</string>
     <string name="delete_server_confirmation">Вы уверены, что хотите удалить этот сервер?</string>
+    <string name="delete_server">Удалить сервер</string>
     <string name="delete_server_confirmation_with_name">Удалить %s?</string>
     <string name="delete">Удалить</string>
     <string name="server_details">Сведения о сервере</string>
@@ -55,6 +73,8 @@
     <string name="port_hint">например, 22</string>
     <string name="http_proxy_port">Порт HTTP прокси</string>
     <string name="http_proxy_port_hint">например, 8080</string>
+
+    <string name="delete_key">Удалить ключ</string>
     
     
     
@@ -93,6 +113,20 @@
     <string name="failed_to_generate_ssh_key">Не удалось создать ключ SSH</string>
     <string name="ssh_public_key">Открытый ключ SSH</string>
     <string name="import_existing_key">Импортировать существующий ключ</string>
+
+    <string name="theme">Тема</string>
+
+    <string name="light">Светлая</string>
+
+    <string name="dark">Тёмная</string>
+
+    <string name="system_default">Системная</string>
+
+    <string name="language_system">Системный язык</string>
+
+    <string name="language_english">Английский</string>
+
+    <string name="language_russian">Русский</string>
     <string name="paste_private_key">Вставьте свой закрытый ключ ниже, чтобы импортировать его.</string>
     <string name="error_importing_key">Ошибка импорта ключа: %s</string>
     <string name="import_ssh_key">Импортировать ключ SSH</string>

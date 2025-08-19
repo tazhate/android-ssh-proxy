@@ -36,17 +36,17 @@ class KeySetupFragment : Fragment() {
         val keyRepository = KeyRepository(requireContext())
         keyManager = SshKeyManager(requireContext(), keyRepository)
         preferencesManager = PreferencesManager(requireContext())
-        
+
         lifecycleScope.launch {
-            // Generate key if it doesn't exist
-            if (!keyManager.hasKeyPair()) {
-                currentKey = keyManager.generateKeyPair("Default Key")
-                // Set as active after generation
+            val allKeys = keyRepository.getAllKeys().first()
+            if (allKeys.isNotEmpty()) {
+                // Если есть хотя бы один ключ, не генерируем новый, просто используем первый
+                currentKey = allKeys.firstOrNull()
+                // Можно выставить активный, если нужно
                 currentKey?.let { preferencesManager.setActiveKeyId(it.id) }
             } else {
-                // Get the first key as the current one for setup
-                currentKey = keyRepository.getAllKeys().first().firstOrNull()
-                // Set as active if not set
+                // Только если ключей нет вообще, генерируем новый
+                currentKey = keyManager.generateKeyPair("Default Key")
                 currentKey?.let { preferencesManager.setActiveKeyId(it.id) }
             }
 

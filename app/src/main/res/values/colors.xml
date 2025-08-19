@@ -81,6 +81,11 @@
     <color name="vpn_button_connected">#00BFA5</color>     <!-- Mint green -->
     <color name="vpn_button_connecting">#FFC107</color>    <!-- Bright amber yellow -->
 
+    <!-- Widget status colors -->
+    <color name="widget_connected">#4CAF50</color>
+    <color name="widget_connecting">#FFC107</color>
+    <color name="widget_disconnected">#757575</color>
+
     <!-- Dark theme colors -->
     <color name="dark_background">#121212</color>
     <color name="dark_surface">#1E1E1E</color>

@@ -21,4 +21,15 @@
         <item name="colorSurfaceVariant">#E7E0EC</item>
         <item name="colorOnSurfaceVariant">#49454F</item>
     </style>
+    
+    <!-- Transparent theme for VPN permission activity from widget -->
+    <style name="Theme.SshProxy.Transparent" parent="Theme.Material3.DayNight.NoActionBar">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowIsFloating">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

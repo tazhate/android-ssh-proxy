@@ -30,6 +30,36 @@ import java.util.*
 import android.annotation.SuppressLint
 
 class SshKeyManager(private val context: Context, private val keyRepository: KeyRepository) {
+    // Сохраняет зашифрованный PEM-файл приватного ключа
+    fun saveEncryptedPem(keyId: String, pem: String) {
+        val password = com.example.sshproxy.security.KeyPasswordKeystore.getOrCreatePassword(context, keyId)
+        val encryptedPem = com.example.sshproxy.security.PemAesUtil.encryptPem(pem, password)
+        com.example.sshproxy.security.KeyPasswordStorage.storeEncryptedPem(context, keyId, encryptedPem)
+    }
+
+    // Загружает и расшифровывает PEM-файл приватного ключа
+    fun loadDecryptedPem(keyId: String): String? {
+        Log.d(TAG, "loadDecryptedPem called for keyId: $keyId")
+        val encryptedPem = com.example.sshproxy.security.KeyPasswordStorage.getEncryptedPem(context, keyId)
+        Log.d(TAG, "Encrypted PEM from storage: ${if (encryptedPem != null) "Found (${encryptedPem.length} chars)" else "NULL"}")
+        
+        val password = com.example.sshproxy.security.KeyPasswordKeystore.getOrCreatePassword(context, keyId)
+        Log.d(TAG, "Password from Keystore: ${if (password != null) "Found" else "NULL"}")
+        
+        return if (encryptedPem != null && password != null) {
+            try {
+                val decrypted = com.example.sshproxy.security.PemAesUtil.decryptPem(encryptedPem, password)
+                Log.d(TAG, "PEM decryption successful: ${if (decrypted != null) decrypted.length else 0} chars")
+                decrypted
+            } catch (e: Exception) { 
+                Log.e(TAG, "PEM decryption failed", e)
+                null 
+            }
+        } else {
+            Log.e(TAG, "Cannot decrypt: encryptedPem=${encryptedPem != null}, password=${password != null}")
+            null
+        }
+    }
 
     @SuppressLint("NewApi")
     enum class KeyType(val algorithm: String, val spec: Any?, val sshName: String) {
@@ -68,8 +98,15 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
             }
             val keyPair = keyGen.generateKeyPair()
 
-            saveKeyPair(keyPair, keyId)
-            Log.d(TAG, "SSH key pair ($keyType) generated successfully for $name")
+            // --- Новый способ: шифруем PEM паролем из Keystore, сохраняем IV+encrypted в SharedPreferences ---
+            val privateKeyPem = convertPrivateKeyToPem(keyPair.private)
+            val password = com.example.sshproxy.security.KeyPasswordKeystore.getOrCreatePassword(context, keyId)
+            val encryptedPem = com.example.sshproxy.security.PemAesUtil.encryptPem(privateKeyPem, password)
+            com.example.sshproxy.security.KeyPasswordStorage.storeEncryptedPem(context, keyId, encryptedPem)
+
+            // Сохраняем публичный ключ (старый способ)
+            val publicKeyFile = File(context.filesDir, "$PUBLIC_KEY_PREFIX$keyId")
+            publicKeyFile.writeBytes(keyPair.public.encoded)
 
             val publicKeyString = formatSshPublicKey(keyPair.public, keyType)
             val fingerprint = generateFingerprint(keyPair.public)
@@ -105,7 +142,7 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
         publicKeyFile.writeBytes(keyPair.public.encoded)
     }
 
-    private fun convertPrivateKeyToPem(privateKey: PrivateKey): String {
+    fun convertPrivateKeyToPem(privateKey: PrivateKey): String {
         val stringWriter = StringWriter()
         PemWriter(stringWriter).use { pemWriter ->
             pemWriter.writeObject(PemObject("PRIVATE KEY", privateKey.encoded))
@@ -128,10 +165,16 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
             }
 
             val keyBytes = publicKeyFile.readBytes()
+            if (keyBytes.isEmpty()) {
+                Log.e(TAG, "Public key file for keyId $keyId is empty")
+                return@withContext null
+            }
             val keySpec = X509EncodedKeySpec(keyBytes)
             val keyFactory = KeyFactory.getInstance(key.keyType.algorithm)
-            val publicKey = keyFactory.generatePublic(keySpec)
-
+            val publicKey = try { keyFactory.generatePublic(keySpec) } catch (e: Exception) {
+                Log.e(TAG, "Failed to generate public key from spec", e)
+                return@withContext null
+            }
             formatSshPublicKey(publicKey, key.keyType)
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load public key", e)
@@ -164,34 +207,45 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
     }
 
     private fun formatSshPublicKey(publicKey: PublicKey, keyType: KeyType): String {
+        if (publicKey == null) {
+            Log.e(TAG, "formatSshPublicKey: publicKey is null")
+            return "Error: publicKey is null"
+        }
         val out = ByteArrayOutputStream()
         val dos = DataOutputStream(out)
         try {
-            dos.writeInt(keyType.sshName.toByteArray().size)
-            dos.write(keyType.sshName.toByteArray())
+            val sshNameBytes = keyType.sshName.toByteArray()
+            dos.writeInt(sshNameBytes.size)
+            dos.write(sshNameBytes)
 
             when (keyType) {
                 KeyType.RSA -> {
-                    val rsaPublicKey = publicKey as RSAPublicKey
-                    val e = rsaPublicKey.publicExponent.toByteArray()
+                    val rsaPublicKey = publicKey as? RSAPublicKey
+                    if (rsaPublicKey == null) return "Error: Not an RSA public key"
+                    val e = rsaPublicKey.publicExponent?.toByteArray() ?: return "Error: RSA exponent is null"
+                    val m = rsaPublicKey.modulus?.toByteArray() ?: return "Error: RSA modulus is null"
                     dos.writeInt(e.size)
                     dos.write(e)
-                    val m = rsaPublicKey.modulus.toByteArray()
                     dos.writeInt(m.size)
                     dos.write(m)
                 }
                 KeyType.ED25519 -> {
-                    val edPublicKey = publicKey as BCEdDSAPublicKey
-                    val p = edPublicKey.pointEncoding.reversedArray() // Little-endian
+                    val edPublicKey = publicKey as? BCEdDSAPublicKey
+                    if (edPublicKey == null) return "Error: Not an ED25519 public key"
+                    val p = edPublicKey.pointEncoding?.reversedArray() ?: return "Error: ED25519 pointEncoding is null"
                     dos.writeInt(p.size)
                     dos.write(p)
                 }
                 KeyType.ECDSA_256 -> {
-                    val ecPublicKey = publicKey as ECPublicKey
+                    val ecPublicKey = publicKey as? ECPublicKey
+                    if (ecPublicKey == null) return "Error: Not an ECDSA public key"
                     val curveName = "nistp256"
-                    dos.writeInt(curveName.toByteArray().size)
-                    dos.write(curveName.toByteArray())
-                    val p = ecPublicKey.w.affineX.toByteArray(32) + ecPublicKey.w.affineY.toByteArray(32)
+                    val curveNameBytes = curveName.toByteArray()
+                    dos.writeInt(curveNameBytes.size)
+                    dos.write(curveNameBytes)
+                    val x = ecPublicKey.w.affineX?.toByteArray(32) ?: return "Error: ECDSA X is null"
+                    val y = ecPublicKey.w.affineY?.toByteArray(32) ?: return "Error: ECDSA Y is null"
+                    val p = x + y
                     val uncompressed = ByteArray(1) { 4 } + p
                     dos.writeInt(uncompressed.size)
                     dos.write(uncompressed)
@@ -225,33 +279,35 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
      */
     suspend fun getPrivateKey(keyId: String): PrivateKey? = withContext(Dispatchers.IO) {
         try {
-            val key = keyRepository.getKeyById(keyId) ?: return@withContext null
-            
-            val privateKeyFile = File(context.filesDir, "$PRIVATE_KEY_PREFIX$keyId")
-            val ivFile = File(context.filesDir, "$IV_PREFIX$keyId")
-            
-            if (!privateKeyFile.exists() || !ivFile.exists()) {
-                Log.e(TAG, "Private key or IV file not found for keyId: $keyId")
+            Log.d(TAG, "getPrivateKey called for keyId: $keyId")
+            val key = keyRepository.getKeyById(keyId)
+            if (key == null) {
+                Log.e(TAG, "Key not found in database for keyId: $keyId")
                 return@withContext null
             }
+            Log.d(TAG, "Key found in database: ${key.name}, type: ${key.keyType}")
             
-            val ciphertext = privateKeyFile.readBytes()
-            val iv = ivFile.readBytes()
-            val encryptedData = KeystoreManager.EncryptedData(ciphertext, iv)
+            // 1. Пробуем зашифрованный PEM-файл с паролем из Keystore
+            val pemString = loadDecryptedPem(keyId)
+            Log.d(TAG, "loadDecryptedPem returned: ${if (pemString != null) "PEM content (${pemString.length} chars)" else "null"}")
             
-            val decryptedPem = keystoreManager.decryptPrivateKey(keyId, encryptedData)
-            val pemString = String(decryptedPem)
-            
-            // Parse PEM to get PrivateKey object
-            return@withContext parsePemToPrivateKey(pemString, key.keyType)
+            if (pemString != null) {
+                val privateKey = parsePemToPrivateKey(pemString, key.keyType)
+                Log.d(TAG, "parsePemToPrivateKey returned: ${if (privateKey != null) "PrivateKey object" else "null"}")
+                return@withContext privateKey
+            }
+            Log.e(TAG, "No private key found for keyId: $keyId")
+            return@withContext null
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to decrypt private key for keyId: $keyId", e)
+            Log.e(TAG, "Failed to get private key for keyId: $keyId", e)
             null
         }
     }
 
     private fun parsePemToPrivateKey(pemString: String, keyType: KeyType): PrivateKey? {
         try {
+            Log.d(TAG, "parsePemToPrivateKey: keyType=${keyType.algorithm}, pemLength=${pemString.length}")
+            
             // Extract base64 content from PEM
             val base64Content = pemString
                 .replace("-----BEGIN PRIVATE KEY-----", "")
@@ -259,12 +315,19 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
                 .replace("\n", "")
                 .replace("\r", "")
             
+            Log.d(TAG, "Base64 content length: ${base64Content.length}")
+            
             val keyBytes = Base64.decode(base64Content, Base64.DEFAULT)
+            Log.d(TAG, "Decoded key bytes: ${keyBytes.size} bytes")
+            
             val keySpec = PKCS8EncodedKeySpec(keyBytes)
             val keyFactory = KeyFactory.getInstance(keyType.algorithm)
-            return keyFactory.generatePrivate(keySpec)
+            val privateKey = keyFactory.generatePrivate(keySpec)
+            
+            Log.d(TAG, "Successfully created PrivateKey: ${privateKey.algorithm}")
+            return privateKey
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to parse PEM to private key", e)
+            Log.e(TAG, "Failed to parse PEM to private key for keyType: ${keyType.algorithm}", e)
             return null
         }
     }
@@ -291,14 +354,6 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
                 dos.writeInt(key.modulus.toByteArray().size)
                 dos.write(key.modulus.toByteArray())
             }
-            is EdECPublicKey -> {
-                val sshName = "ssh-ed25519".toByteArray()
-                dos.writeInt(sshName.size)
-                dos.write(sshName)
-                val p = key.point.y.toByteArray().reversedArray()
-                dos.writeInt(p.size)
-                dos.write(p)
-            }
             is ECPublicKey -> {
                 val sshName = "ecdsa-sha2-nistp256".toByteArray()
                 dos.writeInt(sshName.size)
@@ -310,6 +365,17 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
                 val uncompressed = ByteArray(1) { 4 } + p
                 dos.writeInt(uncompressed.size)
                 dos.write(uncompressed)
+            }
+            else -> {
+                // EdECPublicKey поддерживается только с API 33
+                if (android.os.Build.VERSION.SDK_INT >= 33 && key is EdECPublicKey) {
+                    val sshName = "ssh-ed25519".toByteArray()
+                    dos.writeInt(sshName.size)
+                    dos.write(sshName)
+                    val p = key.point.y.toByteArray().reversedArray()
+                    dos.writeInt(p.size)
+                    dos.write(p)
+                }
             }
         }
         return byteos.toByteArray()

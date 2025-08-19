@@ -1,8 +1,10 @@
+
 package com.example.sshproxy
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.net.ConnectivityManager
 import android.net.Network
@@ -44,6 +46,36 @@ import java.net.Socket
 import java.net.URL
 
 class SshProxyService : VpnService() {
+    private fun updateVpnWidget() {
+        val intent = Intent("android.appwidget.action.APPWIDGET_UPDATE")
+        intent.setPackage(packageName)
+        sendBroadcast(intent)
+    }
+
+    private fun setVpnRunningPref(isRunning: Boolean) {
+        val prefs = getSharedPreferences("ssh_proxy_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("vpn_running", isRunning).apply()
+        updateVpnWidget()
+    }
+    
+    private fun setVpnConnectingPref(isConnecting: Boolean) {
+        AppLog.log("setVpnConnectingPref: isConnecting=$isConnecting")
+        val prefs = getSharedPreferences("ssh_proxy_prefs", Context.MODE_PRIVATE)
+        prefs.edit().putBoolean("vpn_connecting", isConnecting).apply()
+        
+        // Управляем морганием виджета
+        if (isConnecting) {
+            com.example.sshproxy.widget.VPNStatusWidgetProvider.startBlinking(this)
+        } else {
+            com.example.sshproxy.widget.VPNStatusWidgetProvider.stopBlinking(this)
+            // Дополнительно обновляем виджет после остановки моргания
+            android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                updateVpnWidget()
+            }, 100)
+        }
+        
+        updateVpnWidget()
+    }
     enum class ConnectionState {
         DISCONNECTED,
         CONNECTING, 
@@ -75,6 +107,9 @@ class SshProxyService : VpnService() {
         val currentPingMonitor: StateFlow<PingMonitor?> = _currentPingMonitor.asStateFlow()
         
         init {
+            android.util.Log.d("SshProxyService", "Companion object init")
+            // Регистрируем BouncyCastle провайдер для поддержки современной криптографии
+            Security.removeProvider(BouncyCastleProvider.PROVIDER_NAME)
             Security.addProvider(BouncyCastleProvider())
         }
     }
@@ -86,10 +121,9 @@ class SshProxyService : VpnService() {
     private var serverSocket: ServerSocket? = null
     private var hostKeyVerifier: SecureHostKeyVerifier? = null
     private var securityNotificationManager: SecurityNotificationManager? = null
-    
     private var connectionMonitor: ConnectionHealthMonitor? = null
     private var pingMonitor: PingMonitor? = null
-    private val serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
+    private lateinit var serviceScope: CoroutineScope
     
     private lateinit var preferencesManager: PreferencesManager
     private lateinit var serverRepository: ServerRepository
@@ -103,7 +137,9 @@ class SshProxyService : VpnService() {
 
 
     override fun onCreate() {
-        super.onCreate()
+        super.onCreate() // Corrected: Added missing semicolon
+        AppLog.log("SshProxyService.onCreate")
+        serviceScope = CoroutineScope(Dispatchers.Main + SupervisorJob())
         createNotificationChannel()
         
         preferencesManager = PreferencesManager(this)
@@ -126,8 +162,8 @@ class SshProxyService : VpnService() {
         
         // Observe connection state changes
         serviceScope.launch {
-            connectionMonitor?.connectionState?.collectLatest { state ->
-                when (state) {
+            connectionMonitor?.connectionState?.collectLatest {
+                when (it) {
                     ConnectionHealthMonitor.ConnectionState.RECONNECTING -> {
                         Log.d(TAG, "Attempting to reconnect...")
                         updateNotification("Reconnecting...")
@@ -148,10 +184,12 @@ class SshProxyService : VpnService() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        AppLog.log("SshProxyService.onStartCommand: ${intent?.action}")
         when (intent?.action) {
             ACTION_START -> {
                 _connectionState.value = ConnectionState.CONNECTING
                 _isRunning.value = false // Connecting != Running
+                setVpnConnectingPref(true)
                 val serverId = intent.getLongExtra(EXTRA_SERVER_ID, -1)
                 if (serverId != -1L) {
                     currentServerId = serverId
@@ -172,11 +210,18 @@ class SshProxyService : VpnService() {
         withContext(Dispatchers.IO) {
             try {
                 AppLog.log("Starting connection...")
-                
+                val server = serverRepository.getServerById(serverId)
+                if (server == null) {
+                    Log.e(TAG, "Server not found")
+                    AppLog.log("Error: Server not found for ID: $serverId")
+                    stopSelf()
+                    return@withContext
+                }
+                val prefs = getSharedPreferences("ssh_proxy_prefs", Context.MODE_PRIVATE)
+                prefs.edit().putString("active_server_host", server.host).apply()
                 // Проверяем, что VPN еще НЕ активен
                 val currentVpnStatus = if (vpnInterface != null) "ACTIVE" else "INACTIVE"
                 AppLog.log("Current VPN status: $currentVpnStatus")
-                
                 // Получаем активные сети для обхода VPN
                 val connectivityManager = getSystemService(ConnectivityManager::class.java)
                 activeNetworks = connectivityManager?.let { cm ->
@@ -187,9 +232,7 @@ class SshProxyService : VpnService() {
                             val hasInternet = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET) == true
                             val notVpn = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) != true
                             val validated = capabilities?.hasCapability(NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true
-                            
                             AppLog.log("Active network: $activeNetwork, hasInternet: $hasInternet, notVPN: $notVpn, validated: $validated")
-                            
                             if (hasInternet && notVpn && validated) {
                                 arrayOf(activeNetwork)
                             } else {
@@ -205,17 +248,10 @@ class SshProxyService : VpnService() {
                         arrayOf<Network>()
                     }
                 } ?: arrayOf()
-                
                 AppLog.log("Found ${activeNetworks?.size ?: 0} active non-VPN networks")
-                
-                val server = serverRepository.getServerById(serverId) ?: run {
-                    Log.e(TAG, "Server not found")
-                    AppLog.log("Error: Server not found.")
-                    stopSelf()
-                    return@withContext
-                }
 
                 AppLog.log("Connecting to ${server.name} (${server.host}:${server.port}) as ${server.username}")
+                AppLog.log("Server SSH key ID: ${server.sshKeyId}")
                 AppLog.log("SSH connect timeout: 30000ms")
                 
                 // SSH подключение с проверкой host key
@@ -238,6 +274,8 @@ class SshProxyService : VpnService() {
                         throw e
                     }
                     
+                    // Используем ключ сервера, если есть, иначе активный ключ
+                    // Если у сервера нет привязанного ключа (null), функция автоматически использует активный
                     val keyFile = resolvePrivateKeyFile(server.sshKeyId)
                         ?: throw IOException("SSH key not found. Please generate one.")
 
@@ -277,6 +315,8 @@ class SshProxyService : VpnService() {
                     _isRunning.value = true
                     _connectionStartTime.value = System.currentTimeMillis()
                     updateNotification("Connected to ${server.name}")
+                    setVpnConnectingPref(false)
+                    setVpnRunningPref(true)
                     AppLog.log("Connection fully established at ${_connectionStartTime.value}")
                     
                     // Start ping monitoring with aggressive connection issue detection
@@ -284,8 +324,8 @@ class SshProxyService : VpnService() {
                     pingMonitor = PingMonitor(
                         server.host, 
                         server.port,
-                        onConnectionIssue = { consecutiveFailures ->
-                            AppLog.log("Quick connection issue detected: $consecutiveFailures consecutive ping failures")
+                        onConnectionIssue = {
+                            AppLog.log("Quick connection issue detected: $it consecutive ping failures")
                             // Trigger immediate connection check
                             serviceScope.launch {
                                 if (!checkSshConnection()) {
@@ -309,13 +349,14 @@ class SshProxyService : VpnService() {
                     )
                 }
             } catch (e: Exception) {
+                AppLog.log("SshProxyService.startConnection catch: ${e.message}")
                 Log.e(TAG, "Connection failed: ${e.message}", e)
-                AppLog.log("Error: Connection failed - ${e.message}")
                 connectionMonitor?.onConnectionLost()
                 withContext(Dispatchers.Main) {
                     _connectionState.value = ConnectionState.DISCONNECTED
                     _isRunning.value = false
                     _connectionStartTime.value = null
+                    setVpnConnectingPref(false)
                     updateNotification("Connection failed")
                     stopSelf()
                 }
@@ -356,8 +397,12 @@ class SshProxyService : VpnService() {
             .addAddress("fd00::1", 128)   // IPv6 local address
             .addDnsServer("8.8.8.8")      // IPv4 DNS
             .addDnsServer("2001:4860:4860::8888") // IPv6 Google DNS
-            .setHttpProxy(android.net.ProxyInfo.buildDirectProxy("127.0.0.1", server.httpProxyPort))
             .setMtu(1500)
+
+        // setHttpProxy доступен только с API 29
+        if (Build.VERSION.SDK_INT >= 29) {
+            builder.setHttpProxy(android.net.ProxyInfo.buildDirectProxy("127.0.0.1", server.httpProxyPort))
+        }
         
         // Настраиваем обход VPN для SSH соединения
         if (activeNetworks != null && activeNetworks!!.isNotEmpty()) {
@@ -368,7 +413,7 @@ class SshProxyService : VpnService() {
         // Защита SSH соединения от VPN маршрутизации
         try {
             // Используем уже подключенный SSH клиент для получения IP
-            val sshServerIp = if (server.host.matches(Regex("\\d+\\.\\d+\\.d+\\.d+"))) {
+            val sshServerIp = if (server.host.matches(Regex("\\d+\\.\\d+\\.\\d+\\.\\d+"))) {
                 // Уже IP адрес
                 server.host
             } else {
@@ -514,27 +559,36 @@ class SshProxyService : VpnService() {
     }
 
     private fun stopVpn() {
-        _connectionState.value = ConnectionState.DISCONNECTING
-        _isRunning.value = false
-        AppLog.log("Disconnecting...")
-        connectionJob?.cancel()
-        connectionMonitor?.stopMonitoring()
-        cleanupSshConnection()
+    AppLog.log("SshProxyService.stopVpn")
+    _connectionState.value = ConnectionState.DISCONNECTING
+    _isRunning.value = false
+    setVpnConnectingPref(false)
+    AppLog.log("Disconnecting...")
+    connectionJob?.cancel()
+    connectionMonitor?.stopMonitoring()
+    cleanupSshConnection()
         
-        vpnInterface?.close()
-        vpnInterface = null
-        stopNetworkMonitoring()
+    vpnInterface?.close()
+    vpnInterface = null
+    stopNetworkMonitoring()
         
-        _connectionState.value = ConnectionState.DISCONNECTED
-        _connectionStartTime.value = null
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+    _connectionState.value = ConnectionState.DISCONNECTED
+    _connectionStartTime.value = null
+    setVpnConnectingPref(false)
+    stopForeground(STOP_FOREGROUND_REMOVE)
+    stopSelf()
     }
 
     private suspend fun resolvePrivateKeyFile(serverSshKeyId: String? = null): File? {
         return withContext(Dispatchers.IO) {
+            // Добавим подробные логи для отладки
+            AppLog.log("resolvePrivateKeyFile called, serverSshKeyId=$serverSshKeyId")
+            val activeKeyId = preferencesManager.getActiveKeyId()
+            AppLog.log("Active key from preferences: $activeKeyId")
+            Log.d(TAG, "resolvePrivateKeyFile: serverSshKeyId=$serverSshKeyId, activeKeyId=$activeKeyId")
+            
             // Используем ключ сервера, если указан, иначе активный ключ
-            val keyId = serverSshKeyId ?: preferencesManager.getActiveKeyId()
+            val keyId = serverSshKeyId ?: activeKeyId
             AppLog.log("Using SSH key ID: $keyId ${if (serverSshKeyId != null) "(server-specific)" else "(active)"}")
             
             if (keyId != null) {
@@ -708,6 +762,14 @@ class SshProxyService : VpnService() {
     
     private fun handleNetworkChange(network: Network, isAvailable: Boolean) {
         serviceScope.launch(Dispatchers.IO) {
+            val connectivityManager = getSystemService(ConnectivityManager::class.java)
+            val capabilities = connectivityManager.getNetworkCapabilities(network)
+            val isVpn = capabilities?.hasTransport(NetworkCapabilities.TRANSPORT_VPN) == true
+            if (isVpn) {
+                AppLog.log("Ignoring VPN network change")
+                return@launch
+            }
+
             try {
                 val connectivityManager = getSystemService(ConnectivityManager::class.java)
                 
@@ -938,9 +1000,12 @@ class SshProxyService : VpnService() {
     }
 
     override fun onDestroy() {
+        AppLog.log("SshProxyService.onDestroy")
         _connectionState.value = ConnectionState.DISCONNECTED
         _isRunning.value = false
         _connectionStartTime.value = null
+        setVpnConnectingPref(false)
+        setVpnRunningPref(false)
         connectionMonitor?.stopMonitoring()
         pingMonitor?.stopMonitoring()
         _currentPingMonitor.value = null

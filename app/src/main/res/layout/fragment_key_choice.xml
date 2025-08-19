@@ -29,12 +29,20 @@
             android:layout_marginTop="24dp"
             android:layout_gravity="center_horizontal" />
 
+
         <Button
             android:id="@+id/btnGenerate"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/generate_new_key"
             android:layout_marginTop="48dp" />
+
+        <Button
+            android:id="@+id/btnSkip"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/skip_for_now"
+            android:layout_marginTop="16dp" />
 
 
     </LinearLayout>

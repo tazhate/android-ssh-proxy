@@ -23,6 +23,11 @@ class KeyChoiceFragment : Fragment() {
         binding.btnGenerate.setOnClickListener {
             (activity as? MainActivity)?.navigateToKeyGeneration()
         }
+
+        binding.btnSkip.setOnClickListener {
+            // Переход к добавлению сервера без генерации ключа
+            (activity as? MainActivity)?.navigateToAddServer()
+        }
     }
 
     override fun onDestroyView() {

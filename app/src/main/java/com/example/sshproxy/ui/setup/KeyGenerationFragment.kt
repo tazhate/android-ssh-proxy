@@ -16,6 +16,7 @@ import com.example.sshproxy.data.KeyRepository
 import com.example.sshproxy.data.SshKeyManager
 import com.example.sshproxy.databinding.FragmentKeyGenerationBinding
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.first
 
 class KeyGenerationFragment : Fragment() {
     private var _binding: FragmentKeyGenerationBinding? = null
@@ -30,7 +31,7 @@ class KeyGenerationFragment : Fragment() {
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         
-        generateKey()
+    checkOrGenerateKey()
         
         binding.btnCopyKey.setOnClickListener {
             copyPublicKey()
@@ -45,20 +46,28 @@ class KeyGenerationFragment : Fragment() {
         }
     }
     
-    private fun generateKey() {
+    private fun checkOrGenerateKey() {
         lifecycleScope.launch {
-            try {
-                val keyManager = SshKeyManager(requireContext(), KeyRepository(requireContext()))
-                val generatedKey = keyManager.generateKeyPair("Default Key")
-                publicKey = generatedKey.publicKey
+            val keyRepository = KeyRepository(requireContext())
+            val keyManager = SshKeyManager(requireContext(), keyRepository)
+            val preferencesManager = com.example.sshproxy.data.PreferencesManager(requireContext())
+            val allKeys = keyRepository.getAllKeys().first()
+            if (allKeys.isNotEmpty()) {
+                // Если есть хотя бы один ключ, не генерируем новый, просто используем первый
+                val existingKey = allKeys.first()
+                publicKey = existingKey.publicKey
                 binding.tvPublicKey.text = publicKey
-
-                // Set generated key as active
-                val preferencesManager = com.example.sshproxy.data.PreferencesManager(requireContext())
-                preferencesManager.setActiveKeyId(generatedKey.id)
-            } catch (e: Exception) {
-                binding.tvPublicKey.text = getString(com.example.sshproxy.R.string.error_generating_key_with_message, e.message)
-                Toast.makeText(context, getString(com.example.sshproxy.R.string.failed_to_generate_ssh_key), Toast.LENGTH_LONG).show()
+                preferencesManager.setActiveKeyId(existingKey.id)
+            } else {
+                try {
+                    val generatedKey = keyManager.generateKeyPair("Default Key")
+                    publicKey = generatedKey.publicKey
+                    binding.tvPublicKey.text = publicKey
+                    preferencesManager.setActiveKeyId(generatedKey.id)
+                } catch (e: Exception) {
+                    binding.tvPublicKey.text = getString(com.example.sshproxy.R.string.error_generating_key_with_message, e.message)
+                    Toast.makeText(context, getString(com.example.sshproxy.R.string.failed_to_generate_ssh_key), Toast.LENGTH_LONG).show()
+                }
             }
         }
     }

@@ -26,8 +26,7 @@ class ServerInstructionsDialog : DialogFragment() {
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         val binding = DialogServerInstructionsBinding.inflate(layoutInflater)
         val publicKey = arguments?.getString(ARG_PUBLIC_KEY)
-        
-        // Generate instructions with the actual public key
+
         if (publicKey != null) {
             val instructions = generateInstructions(publicKey)
             binding.tvInstructions.text = instructions
@@ -35,15 +34,17 @@ class ServerInstructionsDialog : DialogFragment() {
                 copyToClipboard(instructions)
             }
         } else {
-            binding.tvInstructions.text = "Error: No active SSH key found. Please generate or select a key first."
+            binding.tvInstructions.text = getString(com.example.sshproxy.R.string.no_ssh_key_configured) + "\n" + getString(com.example.sshproxy.R.string.please_generate_ssh_key)
             binding.btnCopyInstructions.isEnabled = false
         }
-        
-        return MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Server Setup Instructions")
+
+        val dialog = MaterialAlertDialogBuilder(requireContext())
+            .setTitle(getString(com.example.sshproxy.R.string.server_setup_instructions_title))
             .setView(binding.root)
-            .setPositiveButton("Close", null)
+            .setPositiveButton(getString(com.example.sshproxy.R.string.close), null)
+            .setNegativeButton(getString(com.example.sshproxy.R.string.skip_for_now)) { _, _ -> dismiss() }
             .create()
+        return dialog
     }
     
     private fun generateInstructions(publicKey: String): String {
