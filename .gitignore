@@ -99,4 +99,11 @@ ssh_public_key
 ssh_private_*
 ssh_public_*
 2do.md
+
+# ---- AI tooling ----
+.beads/
+.claude/
+.cursor/
+.aider/
+AGENTS.md
 # End of .gitignore

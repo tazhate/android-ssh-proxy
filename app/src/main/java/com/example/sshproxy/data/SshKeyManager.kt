@@ -18,16 +18,13 @@ import java.io.StringWriter
 import java.math.BigInteger
 import java.security.*
 import java.security.interfaces.ECPublicKey
-import java.security.interfaces.EdECPublicKey
 import java.security.interfaces.RSAPublicKey
 import java.security.spec.AlgorithmParameterSpec
 import java.security.spec.ECGenParameterSpec
-import java.security.spec.NamedParameterSpec
 import java.security.spec.PKCS8EncodedKeySpec
 import java.security.spec.X509EncodedKeySpec
 import java.util.*
 
-import android.annotation.SuppressLint
 
 class SshKeyManager(private val context: Context, private val keyRepository: KeyRepository) {
     // Сохраняет зашифрованный PEM-файл приватного ключа
@@ -61,10 +58,9 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
         }
     }
 
-    @SuppressLint("NewApi")
     enum class KeyType(val algorithm: String, val spec: Any?, val sshName: String) {
         RSA("RSA", 4096, "ssh-rsa"),
-        ED25519("Ed25519", NamedParameterSpec.ED25519, "ssh-ed25519"),
+        ED25519("Ed25519", null, "ssh-ed25519"),
         ECDSA_256("EC", ECGenParameterSpec("secp256r1"), "ecdsa-sha2-nistp256")
     }
 
@@ -366,16 +362,13 @@ class SshKeyManager(private val context: Context, private val keyRepository: Key
                 dos.writeInt(uncompressed.size)
                 dos.write(uncompressed)
             }
-            else -> {
-                // EdECPublicKey поддерживается только с API 33
-                if (android.os.Build.VERSION.SDK_INT >= 33 && key is EdECPublicKey) {
-                    val sshName = "ssh-ed25519".toByteArray()
-                    dos.writeInt(sshName.size)
-                    dos.write(sshName)
-                    val p = key.point.y.toByteArray().reversedArray()
-                    dos.writeInt(p.size)
-                    dos.write(p)
-                }
+            is BCEdDSAPublicKey -> {
+                val sshName = "ssh-ed25519".toByteArray()
+                dos.writeInt(sshName.size)
+                dos.write(sshName)
+                val p = key.pointEncoding.reversedArray()
+                dos.writeInt(p.size)
+                dos.write(p)
             }
         }
         return byteos.toByteArray()

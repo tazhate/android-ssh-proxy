@@ -244,4 +244,12 @@
     <string name="connection_quality">Quality</string>
     <string name="connection_time">Time</string>
     <string name="widget_select_server">Select a server</string>
+
+    <!-- SSH Algorithms -->
+    <string name="ssh_algorithms">SSH Algorithms</string>
+    <string name="ssh_algorithms_hint">Leave blank for automatic selection of fastest algorithms</string>
+    <string name="cipher_algorithm">Cipher</string>
+    <string name="kex_algorithm">Key Exchange</string>
+    <string name="mac_algorithm">MAC</string>
+    <string name="auto_detect">Auto-detect</string>
 </resources>

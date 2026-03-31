@@ -12,6 +12,8 @@ import com.example.sshproxy.data.PreferencesManager
 import com.example.sshproxy.data.Server
 import com.example.sshproxy.data.SshKey
 import com.example.sshproxy.databinding.DialogAddServerBinding
+import com.example.sshproxy.network.SshAlgorithmManager
+import android.widget.ArrayAdapter
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.launch
 
@@ -25,6 +27,7 @@ class AddServerDialog(
     private lateinit var keyRepository: KeyRepository
     private lateinit var preferencesManager: PreferencesManager
     private lateinit var binding: DialogAddServerBinding
+    private val algorithmManager = SshAlgorithmManager()
 
     override fun onCreateDialog(savedInstanceState: Bundle?): Dialog {
         binding = DialogAddServerBinding.inflate(layoutInflater)
@@ -33,6 +36,9 @@ class AddServerDialog(
         keyRepository = KeyRepository(requireContext())
         preferencesManager = PreferencesManager(requireContext())
         
+        // Setup SSH algorithm dropdowns
+        setupAlgorithmDropdowns()
+        
         // Setup initial values
         server?.let {
             binding.etHost.setText(it.host)
@@ -40,6 +46,11 @@ class AddServerDialog(
             binding.etUsername.setText(it.username)
             binding.etPort.setText(it.port.toString())
             binding.etHttpProxyPort.setText(it.httpProxyPort.toString())
+            
+            // Set algorithm values
+            binding.etCipher.setText(it.preferredCipher ?: "", false)
+            binding.etKex.setText(it.preferredKex ?: "", false)
+            binding.etMac.setText(it.preferredMac ?: "", false)
         } ?: run {
             binding.etUsername.setText("user")
             binding.etPort.setText("22")
@@ -93,6 +104,11 @@ class AddServerDialog(
                 val port = binding.etPort.text.toString().toIntOrNull() ?: 22
                 val httpProxyPort = binding.etHttpProxyPort.text.toString().toIntOrNull() ?: 8080
                 val username = binding.etUsername.text.toString().trim()
+                
+                // Get algorithm selections (empty string means auto-detect)
+                val cipher = binding.etCipher.text.toString().takeIf { it.isNotEmpty() }
+                val kex = binding.etKex.text.toString().takeIf { it.isNotEmpty() }
+                val mac = binding.etMac.text.toString().takeIf { it.isNotEmpty() }
 
                 if (name.isNotEmpty() && host.isNotEmpty() && username.isNotEmpty()) {
                     val newServer = server?.copy(
@@ -100,13 +116,21 @@ class AddServerDialog(
                         host = host,
                         port = port,
                         httpProxyPort = httpProxyPort,
-                        username = username
+                        username = username,
+                        sshKeyId = selectedKey?.id,
+                        preferredCipher = cipher,
+                        preferredKex = kex,
+                        preferredMac = mac
                     ) ?: Server(
                         name = name,
                         host = host,
                         port = port,
                         httpProxyPort = httpProxyPort,
-                        username = username
+                        username = username,
+                        sshKeyId = selectedKey?.id,
+                        preferredCipher = cipher,
+                        preferredKex = kex,
+                        preferredMac = mac
                     )
                     onSave(newServer)
                 }
@@ -189,5 +213,48 @@ class AddServerDialog(
         }
         
         return cleaned
+    }
+    
+    private fun setupAlgorithmDropdowns() {
+        // Get supported algorithms
+        val supportedAlgorithms = algorithmManager.getSupportedAlgorithms()
+        val displayNames = algorithmManager.getAlgorithmDisplayNames()
+        
+        // Setup cipher dropdown
+        val cipherList = supportedAlgorithms.cipher?.split(",") ?: emptyList()
+        val cipherDisplayList = cipherList.map { algorithm ->
+            displayNames[algorithm] ?: algorithm
+        }
+        val cipherAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, cipherDisplayList)
+        binding.etCipher.setAdapter(cipherAdapter)
+        
+        // Setup KEX dropdown
+        val kexList = supportedAlgorithms.kex?.split(",") ?: emptyList()
+        val kexDisplayList = kexList.map { algorithm ->
+            displayNames[algorithm] ?: algorithm
+        }
+        val kexAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, kexDisplayList)
+        binding.etKex.setAdapter(kexAdapter)
+        
+        // Setup MAC dropdown
+        val macList = supportedAlgorithms.mac?.split(",") ?: emptyList()
+        val macDisplayList = macList.map { algorithm ->
+            displayNames[algorithm] ?: algorithm
+        }
+        val macAdapter = ArrayAdapter(requireContext(), android.R.layout.simple_dropdown_item_1line, macDisplayList)
+        binding.etMac.setAdapter(macAdapter)
+        
+        // Set up listeners to store actual algorithm names (not display names)
+        binding.etCipher.setOnItemClickListener { _, _, position, _ ->
+            binding.etCipher.setText(cipherList.getOrNull(position) ?: "", false)
+        }
+        
+        binding.etKex.setOnItemClickListener { _, _, position, _ ->
+            binding.etKex.setText(kexList.getOrNull(position) ?: "", false)
+        }
+        
+        binding.etMac.setOnItemClickListener { _, _, position, _ ->
+            binding.etMac.setText(macList.getOrNull(position) ?: "", false)
+        }
     }
 }

@@ -34,5 +34,14 @@ data class Server(
     val createdAt: Long = System.currentTimeMillis(),
 
     @ColumnInfo(name = "last_used")
-    val lastUsed: Long? = null
+    val lastUsed: Long? = null,
+
+    @ColumnInfo(name = "preferred_cipher")
+    val preferredCipher: String? = null,
+
+    @ColumnInfo(name = "preferred_kex")
+    val preferredKex: String? = null,
+
+    @ColumnInfo(name = "preferred_mac")
+    val preferredMac: String? = null
 )

@@ -10,6 +10,9 @@ interface ServerDao {
 
     @Delete
     suspend fun deleteServer(server: Server)
+    
+    @Update
+    suspend fun updateServer(server: Server)
 
     @Query("SELECT * FROM servers")
     fun getAllServers(): Flow<List<Server>>

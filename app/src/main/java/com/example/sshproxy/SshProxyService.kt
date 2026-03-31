@@ -31,6 +31,10 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.collectLatest
 import net.schmizz.sshj.DefaultConfig
 import net.schmizz.sshj.SSHClient
+import net.schmizz.sshj.common.Factory
+import com.example.sshproxy.network.SshAlgorithmManager
+import com.example.sshproxy.network.SshAlgorithms
+import com.example.sshproxy.data.Server
 import net.schmizz.sshj.connection.channel.direct.LocalPortForwarder
 import net.schmizz.sshj.connection.channel.direct.Parameters
 import net.schmizz.sshj.transport.verification.PromiscuousVerifier
@@ -124,6 +128,7 @@ class SshProxyService : VpnService() {
     private var connectionMonitor: ConnectionHealthMonitor? = null
     private var pingMonitor: PingMonitor? = null
     private lateinit var serviceScope: CoroutineScope
+    private val algorithmManager = SshAlgorithmManager()
     
     private lateinit var preferencesManager: PreferencesManager
     private lateinit var serverRepository: ServerRepository
@@ -256,7 +261,7 @@ class SshProxyService : VpnService() {
                 
                 // SSH подключение с проверкой host key
                 AppLog.log("Initializing SSH client...")
-                sshClient = SSHClient().apply {
+                sshClient = createOptimizedSshClient(server).apply {
                     // Use our secure host key verifier instead of promiscuous
                     addHostKeyVerifier(hostKeyVerifier!!)
                     AppLog.log("Connecting to ${server.host}:${server.port}...")
@@ -264,6 +269,10 @@ class SshProxyService : VpnService() {
                     try {
                         connect(server.host, server.port)
                         AppLog.log("Connected. Authenticating as '${server.username}'...")
+                        
+                        // SSH подключение установлено
+                        AppLog.log("SSH transport connection established successfully")
+                        
                     } catch (e: Exception) {
                         // Check if this is a host key verification failure
                         if (e.message?.contains("host key", ignoreCase = true) == true ||
@@ -291,6 +300,13 @@ class SshProxyService : VpnService() {
 
                     authPublickey(server.username, keyProvider)
                     AppLog.log("SSH authentication successful.")
+                }
+
+                // Автодетекция и сохранение оптимальных алгоритмов для первого подключения
+                if (server.preferredCipher == null && server.preferredKex == null && server.preferredMac == null) {
+                    serviceScope.launch {
+                        saveOptimalAlgorithmsForServer(server)
+                    }
                 }
 
                 // 2. Port forwarding
@@ -523,7 +539,7 @@ class SshProxyService : VpnService() {
                 val server = serverRepository.getServerById(serverId) ?: return@withContext false
                 Log.d(TAG, "Reconnecting to ${server.host}...")
 
-                sshClient = SSHClient(DefaultConfig()).apply {
+                sshClient = createOptimizedSshClient(server).apply {
                     addHostKeyVerifier(hostKeyVerifier!!)
                     connectTimeout = 30000
                     connect(server.host, server.port)
@@ -1012,5 +1028,65 @@ class SshProxyService : VpnService() {
         serviceScope.cancel()
         cleanupSshConnection()
         super.onDestroy()
+    }
+    
+    /**
+     * Создать SSH клиент с оптимальными алгоритмами
+     */
+    private suspend fun createOptimizedSshClient(server: Server): SSHClient {
+        return withContext(Dispatchers.IO) {
+            // Проверяем есть ли сохраненные алгоритмы для этого сервера
+            val savedAlgorithms = SshAlgorithms(
+                cipher = server.preferredCipher,
+                kex = server.preferredKex,
+                mac = server.preferredMac
+            )
+            
+            val hasCustomAlgorithms = savedAlgorithms.cipher != null || 
+                                     savedAlgorithms.kex != null || 
+                                     savedAlgorithms.mac != null
+            
+            if (hasCustomAlgorithms) {
+                AppLog.log("Using saved algorithms for ${server.name}:")
+                AppLog.log("  - Cipher: ${savedAlgorithms.cipher}")
+                AppLog.log("  - KEX: ${savedAlgorithms.kex}")
+                AppLog.log("  - MAC: ${savedAlgorithms.mac}")
+                val customConfig = algorithmManager.createCustomConfig(savedAlgorithms)
+                SSHClient(customConfig)
+            } else {
+                AppLog.log("No saved algorithms for ${server.name}, using default SSH config")
+                AppLog.log("Fast algorithms will be auto-selected and saved after successful connection")
+                // Для первого подключения используем default config
+                SSHClient()
+            }
+        }
+    }
+    
+    /**
+     * Сохранить быстрые алгоритмы для сервера (после успешного подключения)
+     */
+    private suspend fun saveOptimalAlgorithmsForServer(server: Server) {
+        try {
+            AppLog.log("Saving optimal algorithms for ${server.name}...")
+            
+            // Получаем быстрые алгоритмы из менеджера
+            val fastAlgorithms = algorithmManager.getFastAlgorithms()
+            
+            AppLog.log("Selected fast algorithms for ${server.name}: cipher=${fastAlgorithms.cipher}, kex=${fastAlgorithms.kex}, mac=${fastAlgorithms.mac}")
+            
+            // Сохраняем в базу данных
+            val updatedServer = server.copy(
+                preferredCipher = fastAlgorithms.cipher,
+                preferredKex = fastAlgorithms.kex,
+                preferredMac = fastAlgorithms.mac
+            )
+            
+            serverRepository.updateServer(updatedServer)
+            AppLog.log("Saved fast algorithms for ${server.name}")
+            
+        } catch (e: Exception) {
+            AppLog.log("Failed to save algorithms for ${server.name}: ${e.message}")
+            Log.w(TAG, "Algorithm saving failed", e)
+        }
     }
 }

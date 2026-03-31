@@ -23,7 +23,7 @@ class Converters {
 
 @Database(
     entities = [Server::class, SshKey::class],
-    version = 8, // Incremented version for HTTP proxy auth fields removal
+    version = 9, // Incremented version for preferred algorithms
     exportSchema = false
 )
 @TypeConverters(Converters::class)
@@ -93,6 +93,14 @@ abstract class ServerDatabase : RoomDatabase() {
             }
         }
 
+        private val MIGRATION_8_9 = object : Migration(8, 9) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE servers ADD COLUMN preferred_cipher TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE servers ADD COLUMN preferred_kex TEXT DEFAULT NULL")
+                db.execSQL("ALTER TABLE servers ADD COLUMN preferred_mac TEXT DEFAULT NULL")
+            }
+        }
+
         fun getDatabase(context: Context): ServerDatabase {
             return INSTANCE ?: synchronized(this) {
                 val instance = Room.databaseBuilder(
@@ -100,7 +108,7 @@ abstract class ServerDatabase : RoomDatabase() {
                     ServerDatabase::class.java,
                     "server_database"
                 )
-                .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+                .addMigrations(MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
                 .build()
                 INSTANCE = instance
                 instance

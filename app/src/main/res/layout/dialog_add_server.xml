@@ -170,7 +170,85 @@
                 android:text="@string/change" />
         </LinearLayout>
 
-        
+        <!-- SSH Algorithms Section -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/ssh_algorithms"
+            android:textAppearance="?attr/textAppearanceBodyMedium"
+            android:layout_marginTop="24dp"
+            android:layout_marginBottom="8dp" />
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/ssh_algorithms_hint"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:textColor="?attr/colorOnSurfaceVariant"
+            android:layout_marginBottom="12dp" />
+
+        <!-- Cipher Selection -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/cipher_algorithm"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="4dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                android:id="@+id/etCipher"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="none"
+                android:hint="@string/auto_detect" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- KEX Selection -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/kex_algorithm"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="4dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                android:id="@+id/etKex"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="none"
+                android:hint="@string/auto_detect" />
+        </com.google.android.material.textfield.TextInputLayout>
+
+        <!-- MAC Selection -->
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="@string/mac_algorithm"
+            android:textAppearance="?attr/textAppearanceBodySmall"
+            android:layout_marginTop="8dp"
+            android:layout_marginBottom="4dp" />
+
+        <com.google.android.material.textfield.TextInputLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <com.google.android.material.textfield.MaterialAutoCompleteTextView
+                android:id="@+id/etMac"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:inputType="none"
+                android:hint="@string/auto_detect" />
+        </com.google.android.material.textfield.TextInputLayout>
 
     </LinearLayout>
 

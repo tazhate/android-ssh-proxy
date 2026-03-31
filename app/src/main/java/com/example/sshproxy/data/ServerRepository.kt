@@ -27,6 +27,12 @@ class ServerRepository(private val context: Context) {
         }
     }
     
+    suspend fun updateServer(server: Server) {
+        withContext(Dispatchers.IO) {
+            serverDao.updateServer(server)
+        }
+    }
+    
     suspend fun getServerById(id: Long): Server? {
         return withContext(Dispatchers.IO) {
             serverDao.getServerById(id)
