@@ -10,6 +10,7 @@ import android.net.ConnectivityManager
 import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
+import android.content.pm.PackageManager
 import android.net.VpnService
 import android.os.IBinder
 import android.os.Build
@@ -471,6 +472,19 @@ class SshProxyService : VpnService() {
             builder.addRoute("2001:4860:4860::8888", 128)  // IPv6 Google DNS для теста
         }
             
+        // Per-app split tunneling (allowlist mode)
+        val allowedApps = preferencesManager.getSplitTunnelingApps()
+        if (allowedApps.isNotEmpty()) {
+            for (pkg in allowedApps) {
+                try {
+                    builder.addAllowedApplication(pkg)
+                } catch (e: PackageManager.NameNotFoundException) {
+                    AppLog.log("Split tunneling: skipping unknown package $pkg")
+                }
+            }
+            AppLog.log("Split tunneling: ${allowedApps.size} apps in allowlist")
+        }
+
         vpnInterface = builder.establish()
         if (vpnInterface == null) {
             throw IOException("Failed to establish VPN")

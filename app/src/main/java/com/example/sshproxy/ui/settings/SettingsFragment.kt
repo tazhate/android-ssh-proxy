@@ -331,8 +331,32 @@ class SettingsFragment : Fragment() {
         binding.btnSetup.setOnClickListener {
             showServerSetupInstructions()
         }
+
+        binding.cardSplitTunneling.setOnClickListener {
+            parentFragmentManager.beginTransaction()
+                .replace(com.example.sshproxy.R.id.fragmentContainer,
+                    com.example.sshproxy.ui.splittunneling.SplitTunnelingFragment())
+                .addToBackStack("settings")
+                .commit()
+        }
+
+        updateSplitTunnelingSubtitle()
     }
-    
+
+    override fun onResume() {
+        super.onResume()
+        updateSplitTunnelingSubtitle()
+    }
+
+    private fun updateSplitTunnelingSubtitle() {
+        val count = preferencesManager.getSplitTunnelingApps().size
+        binding.tvSplitTunnelingSubtitle.text = if (count == 0) {
+            getString(R.string.split_tunneling_subtitle_all)
+        } else {
+            resources.getQuantityString(R.plurals.split_tunneling_apps_selected, count, count)
+        }
+    }
+
     private fun showServerSetupInstructions() {
         lifecycleScope.launch {
             try {

@@ -17,6 +17,7 @@ class PreferencesManager(context: Context) {
         private const val KEY_BACKOFF_MULTIPLIER = "backoff_multiplier"
         private const val KEY_THEME = "theme"
         private const val KEY_LANGUAGE = "language"
+        private const val KEY_SPLIT_TUNNELING_APPS = "split_tunneling_apps"
     }
 
     // Active Server ID
@@ -104,4 +105,11 @@ class PreferencesManager(context: Context) {
     fun setLanguage(language: String) {
         prefs.edit().putString(KEY_LANGUAGE, language).apply()
     }
+
+    // Split Tunneling — global allowlist of app package names
+    fun getSplitTunnelingApps(): Set<String> =
+        prefs.getStringSet(KEY_SPLIT_TUNNELING_APPS, emptySet()) ?: emptySet()
+
+    fun setSplitTunnelingApps(packages: Set<String>) =
+        prefs.edit().putStringSet(KEY_SPLIT_TUNNELING_APPS, packages).apply()
 }

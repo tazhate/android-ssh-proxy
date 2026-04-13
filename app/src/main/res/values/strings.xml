@@ -252,4 +252,16 @@
     <string name="kex_algorithm">Key Exchange</string>
     <string name="mac_algorithm">MAC</string>
     <string name="auto_detect">Auto-detect</string>
+
+    <!-- Split Tunneling -->
+    <string name="split_tunneling">Split Tunneling</string>
+    <string name="split_tunneling_search_hint">Search apps…</string>
+    <string name="split_tunneling_show_system_apps">System apps</string>
+    <string name="split_tunneling_reconnect_notice">Reconnect VPN to apply changes</string>
+    <string name="split_tunneling_subtitle_all">All apps use VPN</string>
+    <string name="split_tunneling_no_apps_selected">All traffic goes through VPN</string>
+    <plurals name="split_tunneling_apps_selected">
+        <item quantity="one">%d app selected</item>
+        <item quantity="other">%d apps selected</item>
+    </plurals>
 </resources>
