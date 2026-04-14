@@ -46,6 +46,7 @@ import java.io.File
 import java.io.IOException
 import java.security.Security
 import java.net.InetAddress
+import java.net.InetSocketAddress
 import java.net.ServerSocket
 import java.net.Socket
 import java.net.URL
@@ -475,6 +476,13 @@ class SshProxyService : VpnService() {
         // Per-app split tunneling (allowlist mode)
         val allowedApps = preferencesManager.getSplitTunnelingApps()
         if (allowedApps.isNotEmpty()) {
+            // Always include own package so IP checker and connection health check
+            // work through the VPN tunnel, not bypassing it
+            try {
+                builder.addAllowedApplication(packageName)
+            } catch (e: PackageManager.NameNotFoundException) {
+                AppLog.log("Split tunneling: could not add own package $packageName")
+            }
             for (pkg in allowedApps) {
                 try {
                     builder.addAllowedApplication(pkg)
@@ -482,7 +490,7 @@ class SshProxyService : VpnService() {
                     AppLog.log("Split tunneling: skipping unknown package $pkg")
                 }
             }
-            AppLog.log("Split tunneling: ${allowedApps.size} apps in allowlist")
+            AppLog.log("Split tunneling: ${allowedApps.size} user apps + own package in allowlist")
         }
 
         vpnInterface = builder.establish()
@@ -532,10 +540,26 @@ class SshProxyService : VpnService() {
         return withContext(Dispatchers.IO) {
             try {
                 val client = sshClient
-                if (client != null && client.isConnected && client.isAuthenticated) {
-                    true
+                if (client == null || !client.isConnected || !client.isAuthenticated) {
+                    return@withContext false
+                }
+                // sshj's isConnected may return true even when the underlying TCP
+                // connection has silently dropped (server-side timeout, NAT expiry, etc).
+                // Test the actual proxy port to catch those silent failures.
+                val server = serverRepository.getServerById(currentServerId)
+                if (server != null) {
+                    try {
+                        Socket().use { socket ->
+                            socket.soTimeout = 2000
+                            socket.connect(InetSocketAddress("127.0.0.1", server.httpProxyPort), 2000)
+                        }
+                        true
+                    } catch (e: Exception) {
+                        AppLog.log("Health check: proxy port ${server.httpProxyPort} not responding — tunnel broken")
+                        false
+                    }
                 } else {
-                    false
+                    client.isConnected && client.isAuthenticated
                 }
             } catch (e: Exception) {
                 Log.w(TAG, "Health check failed: ${e.message}")
@@ -1060,7 +1084,7 @@ class SshProxyService : VpnService() {
                                      savedAlgorithms.kex != null || 
                                      savedAlgorithms.mac != null
             
-            if (hasCustomAlgorithms) {
+            val client = if (hasCustomAlgorithms) {
                 AppLog.log("Using saved algorithms for ${server.name}:")
                 AppLog.log("  - Cipher: ${savedAlgorithms.cipher}")
                 AppLog.log("  - KEX: ${savedAlgorithms.kex}")
@@ -1070,12 +1094,66 @@ class SshProxyService : VpnService() {
             } else {
                 AppLog.log("No saved algorithms for ${server.name}, using default SSH config")
                 AppLog.log("Fast algorithms will be auto-selected and saved after successful connection")
-                // Для первого подключения используем default config
                 SSHClient()
             }
+            // Protect the SSH socket so it bypasses the VPN tunnel.
+            // Without this, when the app package is in the split-tunneling allowlist,
+            // the SSH socket would route through the VPN → proxy → SSH → loop.
+            applyProtectedSocketFactory(client)
+            client
         }
     }
     
+    /**
+     * Inject a VPN-protected SocketFactory into an SSHClient via reflection.
+     * Sockets created by this factory call VpnService.protect() before connecting,
+     * ensuring SSH traffic goes directly to the server without routing through the
+     * VPN tunnel (which would cause a routing loop when the app is in the allowlist).
+     */
+    private fun applyProtectedSocketFactory(client: SSHClient) {
+        val factory = object : javax.net.SocketFactory() {
+            override fun createSocket(): Socket = Socket().also { protect(it) }
+            override fun createSocket(host: String, port: Int): Socket {
+                val s = createSocket()
+                s.connect(InetSocketAddress(host, port))
+                return s
+            }
+            override fun createSocket(host: String, port: Int, localHost: InetAddress, localPort: Int): Socket {
+                val s = createSocket()
+                s.bind(InetSocketAddress(localHost, localPort))
+                s.connect(InetSocketAddress(host, port))
+                return s
+            }
+            override fun createSocket(host: InetAddress, port: Int): Socket {
+                val s = createSocket()
+                s.connect(InetSocketAddress(host, port))
+                return s
+            }
+            override fun createSocket(address: InetAddress, port: Int, localAddress: InetAddress, localPort: Int): Socket {
+                val s = createSocket()
+                s.bind(InetSocketAddress(localAddress, localPort))
+                s.connect(InetSocketAddress(address, port))
+                return s
+            }
+        }
+        var clazz: Class<*>? = client.javaClass
+        while (clazz != null) {
+            try {
+                val field = clazz.getDeclaredField("socketFactory")
+                field.isAccessible = true
+                field.set(client, factory)
+                AppLog.log("SSH socket: VPN protection applied")
+                return
+            } catch (e: NoSuchFieldException) {
+                clazz = clazz.superclass
+            } catch (e: Exception) {
+                AppLog.log("SSH socket: could not apply VPN protection — ${e.message}")
+                return
+            }
+        }
+        AppLog.log("SSH socket: socketFactory field not found, SSH may loop through VPN")
+    }
+
     /**
      * Сохранить быстрые алгоритмы для сервера (после успешного подключения)
      */
