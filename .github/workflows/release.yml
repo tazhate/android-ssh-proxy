@@ -6,7 +6,7 @@ on:
       - "v*"
 
 jobs:
-  build-debug:
+  build:
     runs-on: ubuntu-latest
 
     permissions:
@@ -14,7 +14,7 @@ jobs:
 
     env:
       JAVA_VERSION: "17"
-      BUILD_DIR: app/build/outputs/apk/debug
+      BUILD_DIR: app/build/outputs/apk/release
 
     steps:
       - name: Checkout
@@ -27,11 +27,20 @@ jobs:
           java-version: ${{ env.JAVA_VERSION }}
           cache: gradle
 
+      - name: Decode keystore
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > ${{ runner.temp }}/release.jks
+
       - name: Make gradlew executable
         run: chmod +x gradlew
 
-      - name: Gradle assembleDebug
-        run: ./gradlew assembleDebug --no-daemon
+      - name: Build release APK
+        env:
+          KEYSTORE_PATH: ${{ runner.temp }}/release.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: ./gradlew assembleRelease --no-daemon
 
       - name: Locate APK
         id: locate
@@ -42,7 +51,7 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: debug-apk
+          name: release-apk
           path: ${{ steps.locate.outputs.apk }}
           if-no-files-found: error
           retention-days: 14
