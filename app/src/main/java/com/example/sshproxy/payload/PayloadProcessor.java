@@ -1,0 +1,54 @@
+package com.example.sshproxy.payload;
+
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
+
+public class PayloadProcessor {
+
+    private static int rotateIndex = 0;
+
+    public static String processPayload(String template, String host, String port, String proxy, String userAgent) {
+        String payload = template;
+
+        // 1. Replace [crlf] with \r\n
+        payload = payload.replace("[crlf]", "\r\n");
+
+        // 2. Replace [host] and [rlb] with actual host
+        payload = payload.replace("[host]", host);
+        payload = payload.replace("[rlb]", host);
+
+        // 3. Replace [port] with actual port
+        payload = payload.replace("[port]", port);
+
+        // 4. Replace [proxy] with proxy host:port
+        if (proxy != null && !proxy.isEmpty()) {
+            payload = payload.replace("[proxy]", proxy);
+        }
+
+        // 5. Replace [ua] with User-Agent
+        if (userAgent == null || userAgent.isEmpty()) {
+            userAgent = "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36";
+        }
+        payload = payload.replace("[ua]", userAgent);
+
+        // 6. Handle [rotate=host1;host2;host3] - Sequential failover
+        Pattern rotatePattern = Pattern.compile("\\[rotate=([^\\]]+)\\]");
+        Matcher rotateMatcher = rotatePattern.matcher(payload);
+        if (rotateMatcher.find()) {
+            String[] hosts = rotateMatcher.group(1).split(";");
+            String selectedHost = hosts[rotateIndex % hosts.length];
+            payload = payload.replace(rotateMatcher.group(0), selectedHost);
+            rotateIndex++;
+        }
+
+        return payload;
+    }
+
+    public static String[] splitPayload(String payload) {
+        return payload.split("\\[split\\]");
+    }
+
+    public static void resetRotateIndex() {
+        rotateIndex = 0;
+    }
+}
