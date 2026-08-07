@@ -1,75 +1,46 @@
-package com.example.sshproxy
+package com.example.sshproxy.payload;
 
-import android.os.Bundle
-import android.widget.Button
-import android.widget.EditText
-import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
+import java.util.regex.Pattern;
+import java.util.regex.Matcher;
 
-class HttpCustomActivity : AppCompatActivity() {
+public class PayloadProcessor {
 
-    private lateinit var sshHostInput: EditText
-    private lateinit var sshPortInput: EditText
-    private lateinit var sshUsernameInput: EditText
-    private lateinit var sshPasswordInput: EditText
-    private lateinit var proxyHostInput: EditText
-    private lateinit var proxyPortInput: EditText
-    private lateinit var payloadInput: EditText
-    private lateinit var connectButton: Button
-    private lateinit var disconnectButton: Button
-    private lateinit var statusText: TextView
-    private lateinit var logText: TextView
+    private static int rotateIndex = 0;
 
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_http_custom)
+    public static String processPayload(String template, String host, String port, String proxy, String userAgent) {
+        String payload = template;
 
-        sshHostInput = findViewById(R.id.sshHostInput)
-        sshPortInput = findViewById(R.id.sshPortInput)
-        sshUsernameInput = findViewById(R.id.sshUsernameInput)
-        sshPasswordInput = findViewById(R.id.sshPasswordInput)
-        proxyHostInput = findViewById(R.id.proxyHostInput)
-        proxyPortInput = findViewById(R.id.proxyPortInput)
-        payloadInput = findViewById(R.id.payloadInput)
-        connectButton = findViewById(R.id.connectButton)
-        disconnectButton = findViewById(R.id.disconnectButton)
-        statusText = findViewById(R.id.statusText)
-        logText = findViewById(R.id.logText)
+        payload = payload.replace("[crlf]", "\r\n");
+        payload = payload.replace("[host]", host);
+        payload = payload.replace("[rlb]", host);
+        payload = payload.replace("[port]", port);
 
-        connectButton.setOnClickListener {
-            val sshHost = sshHostInput.text.toString().trim()
-            val sshPort = sshPortInput.text.toString().trim()
-            val sshUser = sshUsernameInput.text.toString().trim()
-            val sshPass = sshPasswordInput.text.toString().trim()
-            val proxyHost = proxyHostInput.text.toString().trim()
-            val proxyPort = proxyPortInput.text.toString().trim()
-            val payload = payloadInput.text.toString().trim()
-
-            addLog("[Config] SSH: $sshHost:$sshPort")
-            addLog("[Config] Proxy: $proxyHost:$proxyPort")
-            addLog("[Config] Payload: ${if (payload.length > 50) payload.substring(0, 50) + "..." else payload}")
-            addLog("[INFO] Connect button pressed")
-
-            statusText.text = "Status: Connecting..."
-            statusText.setTextColor(resources.getColor(android.R.color.holo_orange_dark))
-            disconnectButton.isEnabled = true
+        if (proxy != null && !proxy.isEmpty()) {
+            payload = payload.replace("[proxy]", proxy);
         }
 
-        disconnectButton.setOnClickListener {
-            addLog("[INFO] Disconnect button pressed")
-            statusText.text = "Status: Disconnected"
-            statusText.setTextColor(resources.getColor(android.R.color.holo_red_dark))
-            disconnectButton.isEnabled = false
+        if (userAgent == null || userAgent.isEmpty()) {
+            userAgent = "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36";
         }
+        payload = payload.replace("[ua]", userAgent);
+
+        Pattern rotatePattern = Pattern.compile("\\[rotate=([^\\]]+)\\]");
+        Matcher rotateMatcher = rotatePattern.matcher(payload);
+        if (rotateMatcher.find()) {
+            String[] hosts = rotateMatcher.group(1).split(";");
+            String selectedHost = hosts[rotateIndex % hosts.length];
+            payload = payload.replace(rotateMatcher.group(0), selectedHost);
+            rotateIndex++;
+        }
+
+        return payload;
     }
 
-    fun addLog(message: String) {
-        runOnUiThread {
-            logText.append("\n$message")
-            val scrollAmount = logText.layout?.getLineTop(logText.lineCount) ?: 0
-            if (scrollAmount > logText.height) {
-                logText.scrollTo(0, scrollAmount - logText.height)
-            }
-        }
+    public static String[] splitPayload(String payload) {
+        return payload.split("\\[split\\]");
+    }
+
+    public static void resetRotateIndex() {
+        rotateIndex = 0;
     }
 }
