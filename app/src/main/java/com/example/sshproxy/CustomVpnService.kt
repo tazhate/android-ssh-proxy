@@ -63,7 +63,6 @@ class CustomVpnService : VpnService() {
 
     private fun connectToServer() {
         try {
-            // 1. Process the payload
             val processedPayload = PayloadProcessor.processPayload(
                 payload,
                 sshHost,
@@ -74,7 +73,6 @@ class CustomVpnService : VpnService() {
 
             addLog("[1] Payload processed")
 
-            // 2. Connect through proxy
             val proxyAddress = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) {
                 addLog("[2] Connecting via proxy: $proxyHost:$proxyPort")
                 proxyHost
@@ -91,12 +89,10 @@ class CustomVpnService : VpnService() {
             tunnelSocket = Socket(proxyAddress, proxyPortNumber)
             addLog("[3] Socket connected")
 
-            // 3. Send payload
             tunnelSocket?.getOutputStream()?.write(processedPayload.toByteArray())
             tunnelSocket?.getOutputStream()?.flush()
             addLog("[4] Payload sent")
 
-            // 4. Read response
             val reader = BufferedReader(InputStreamReader(tunnelSocket?.getInputStream()))
             val responseLine = reader.readLine()
             addLog("[5] Response: $responseLine")
