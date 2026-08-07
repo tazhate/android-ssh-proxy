@@ -124,7 +124,7 @@ class CustomVpnService : VpnService() {
             val jsch = JSch()
             sshSession = jsch.getSession(sshUser, sshHost, sshPort.toInt())
 
-            // FIX 1 & 2: Use setPassword() instead of direct assignment
+            // Use setPassword() instead of direct assignment
             sshSession?.setPassword(sshPass)
 
             sshSession?.setConfig("StrictHostKeyChecking", "no")
@@ -163,7 +163,6 @@ class CustomVpnService : VpnService() {
 
     private fun setupVpn() {
         try {
-            // FIX 3: Use addAddress() instead of setAddresses()
             vpnInterface = Builder()
                 .addAddress("10.0.0.2", 32)
                 .addRoute("0.0.0.0", 0)
@@ -215,78 +214,7 @@ class CustomVpnService : VpnService() {
         vpnInterface?.close()
         stopForeground(true)
     }
-}
-    private fun connectToServer() {
-        try {
-            // 1. Process the payload
-            val processedPayload = PayloadProcessor.processPayload(
-                payload,
-                sshHost,
-                sshPort,
-                if (proxyHost.isNotEmpty()) "$proxyHost:$proxyPort" else "",
-                "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36"
-            )
-
-            addLog("[1] Payload processed")
-
-            // 2. Connect through proxy
-            val proxyAddress = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) {
-                addLog("[2] Connecting via proxy: $proxyHost:$proxyPort")
-                proxyHost
-            } else {
-                addLog("[2] Connecting directly to: $sshHost:$sshPort")
-                sshHost
-            }
-            val proxyPortNumber = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) {
-                proxyPort.toInt()
-            } else {
-                sshPort.toInt()
-            }
-
-            tunnelSocket = Socket(proxyAddress, proxyPortNumber)
-            addLog("[3] Socket connected")
-
-            // 3. Send payload
-            tunnelSocket?.getOutputStream()?.write(processedPayload.toByteArray())
-            tunnelSocket?.getOutputStream()?.flush()
-            addLog("[4] Payload sent")
-
-            // 4. Read response
-            val reader = BufferedReader(InputStreamReader(tunnelSocket?.getInputStream()))
-            val responseLine = reader.readLine()
-            addLog("[5] Response: $responseLine")
-
-            if (responseLine != null && (responseLine.contains("200 OK") || responseLine.contains("101 Switching Protocols"))) {
-                addLog("[6] Payload accepted! Establishing SSH...")
-                establishSSH()
-            } else {
-                addLog("[ERROR] Payload rejected: $responseLine")
-                showNotification("Connection failed")
-                stopSelf()
-            }
-
-        } catch (e: Exception) {
-            addLog("[ERROR] ${e.message}")
-            e.printStackTrace()
-            showNotification("Error: ${e.message}")
-            stopSelf()
-        }
-    }
-
-    private fun establishSSH() {
-        try {
-            val jsch = JSch()
-            sshSession = jsch.getSession(sshUser, sshHost, sshPort.toInt())
-            sshSession?.password = sshPass
-            sshSession?.setConfig("StrictHostKeyChecking", "no")
-
-            // Use the existing socket
-            sshSession?.setSocketFactory(object : com.jcraft.jsch.SocketFactory {
-                override fun createSocket(host: String?, port: Int): Socket {
-                    return tunnelSocket ?: Socket(host, port)
-                }
-
-                override fun getInputStream(socket: Socket): java.io.InputStream {
+}   // <-- Only ONE closing brace here           override fun getInputStream(socket: Socket): java.io.InputStream {
                     return socket.getInputStream()
                 }
 
