@@ -27,15 +27,5 @@
             </intent-filter>
         </activity>
 
-        <service
-            android:name=".CustomVpnService"
-            android:permission="android.permission.BIND_VPN_SERVICE"
-            android:exported="false"
-            android:foregroundServiceType="dataSync">
-            <intent-filter>
-                <action android:name="android.net.VpnService" />
-            </intent-filter>
-        </service>
-
     </application>
 </manifest>
