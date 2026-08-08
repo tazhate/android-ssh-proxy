@@ -23,7 +23,6 @@ class TrafficRouter(
         val tunnelInput = tunnelSocket.getInputStream()
         val tunnelOutput = tunnelSocket.getOutputStream()
 
-        // Read from TUN and write to SSH tunnel
         readJob = CoroutineScope(Dispatchers.IO).launch {
             val buffer = ByteArray(32767)
             while (isRunning) {
@@ -39,7 +38,6 @@ class TrafficRouter(
             }
         }
 
-        // Read from SSH tunnel and write to TUN
         writeJob = CoroutineScope(Dispatchers.IO).launch {
             val buffer = ByteArray(32767)
             while (isRunning) {
