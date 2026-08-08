@@ -37,36 +37,44 @@ class HttpCustomActivity : AppCompatActivity() {
         logText = findViewById(R.id.logText)
 
         connectButton.setOnClickListener {
-            addLog("[UI] Connect button pressed")
-            startVpnService()
+            val sshHost = sshHostInput.text.toString().trim()
+            val sshPort = sshPortInput.text.toString().trim()
+            val sshUser = sshUsernameInput.text.toString().trim()
+            val sshPass = sshPasswordInput.text.toString().trim()
+            val proxyHost = proxyHostInput.text.toString().trim()
+            val proxyPort = proxyPortInput.text.toString().trim()
+            val payload = payloadInput.text.toString().trim()
+
+            if (sshHost.isEmpty() || sshPort.isEmpty() || sshUser.isEmpty() || sshPass.isEmpty()) {
+                addLog("[ERROR] Please fill in SSH details")
+                statusText.text = "Status: Error - Missing SSH details"
+                statusText.setTextColor(resources.getColor(android.R.color.holo_red_dark))
+                return@setOnClickListener
+            }
+
+            addLog("[Config] SSH: $sshHost:$sshPort")
+            addLog("[Config] Proxy: $proxyHost:$proxyPort")
+            addLog("[Config] Payload: ${if (payload.length > 50) payload.substring(0, 50) + "..." else payload}")
+            addLog("[INFO] Connect button pressed")
+
+            statusText.text = "Status: Connecting..."
+            statusText.setTextColor(resources.getColor(android.R.color.holo_orange_dark))
+            disconnectButton.isEnabled = true
+
+            startVpnService(sshHost, sshPort, sshUser, sshPass, proxyHost, proxyPort, payload)
         }
 
         disconnectButton.setOnClickListener {
-            addLog("[UI] Disconnect button pressed")
+            addLog("[INFO] Disconnect button pressed")
             stopVpnService()
+            statusText.text = "Status: Disconnected"
+            statusText.setTextColor(resources.getColor(android.R.color.holo_red_dark))
+            disconnectButton.isEnabled = false
         }
     }
 
-    private fun startVpnService() {
-        val sshHost = sshHostInput.text.toString().trim()
-        val sshPort = sshPortInput.text.toString().trim()
-        val sshUser = sshUsernameInput.text.toString().trim()
-        val sshPass = sshPasswordInput.text.toString().trim()
-        val proxyHost = proxyHostInput.text.toString().trim()
-        val proxyPort = proxyPortInput.text.toString().trim()
-        val payload = payloadInput.text.toString().trim()
-
-        if (sshHost.isEmpty() || sshPort.isEmpty() || sshUser.isEmpty() || sshPass.isEmpty()) {
-            addLog("[ERROR] Please fill in SSH details")
-            statusText.text = "Status: Error - Missing SSH details"
-            statusText.setTextColor(resources.getColor(android.R.color.holo_red_dark))
-            return
-        }
-
-        addLog("[Config] SSH: $sshHost:$sshPort")
-        addLog("[Config] Proxy: $proxyHost:$proxyPort")
-        addLog("[Config] Payload: ${if (payload.length > 50) payload.substring(0, 50) + "..." else payload}")
-
+    private fun startVpnService(sshHost: String, sshPort: String, sshUser: String, sshPass: String,
+                                proxyHost: String, proxyPort: String, payload: String) {
         val intent = android.content.Intent(this, CustomVpnService::class.java)
         intent.putExtra("sshHost", sshHost)
         intent.putExtra("sshPort", sshPort)
@@ -75,19 +83,12 @@ class HttpCustomActivity : AppCompatActivity() {
         intent.putExtra("proxyHost", proxyHost)
         intent.putExtra("proxyPort", proxyPort)
         intent.putExtra("payload", payload)
-
         startService(intent)
-        statusText.text = "Status: Connecting..."
-        statusText.setTextColor(resources.getColor(android.R.color.holo_orange_dark))
-        disconnectButton.isEnabled = true
     }
 
     private fun stopVpnService() {
         val intent = android.content.Intent(this, CustomVpnService::class.java)
         stopService(intent)
-        statusText.text = "Status: Disconnected"
-        statusText.setTextColor(resources.getColor(android.R.color.holo_red_dark))
-        disconnectButton.isEnabled = false
     }
 
     fun addLog(message: String) {
