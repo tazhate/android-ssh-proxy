@@ -42,7 +42,7 @@ class CustomVpnService : VpnService() {
     private var proxyPort: String = ""
     private var payload: String = ""
 
-    // Set to true to enable traffic router
+    // Set to true to enable traffic routing
     private val USE_TRAFFIC_ROUTER = true
 
     override fun onCreate() {
@@ -181,7 +181,6 @@ class CustomVpnService : VpnService() {
             sshSession = jsch.getSession(sshUser, sshHost, sshPort.toInt())
             sshSession?.setPassword(sshPass)
             sshSession?.setConfig("StrictHostKeyChecking", "no")
-            // Keep the connection alive
             sshSession?.setConfig("ServerAliveInterval", "30")
             sshSession?.setConfig("ServerAliveCountMax", "3")
 
@@ -231,7 +230,6 @@ class CustomVpnService : VpnService() {
 
     private fun setupVpn() {
         try {
-            // Ensure the socket is still open
             if (tunnelSocket == null || tunnelSocket!!.isClosed || !tunnelSocket!!.isConnected) {
                 LogManager.addLog("[ERROR] Tunnel socket is closed or null before VPN setup")
                 showNotification("VPN failed: socket closed")
@@ -240,7 +238,6 @@ class CustomVpnService : VpnService() {
                 return
             }
 
-            // Set socket keep-alive
             tunnelSocket?.keepAlive = true
 
             vpnInterface = Builder()
