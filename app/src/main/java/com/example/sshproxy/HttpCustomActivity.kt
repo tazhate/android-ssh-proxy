@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.net.VpnService
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
@@ -24,6 +25,17 @@ class HttpCustomActivity : AppCompatActivity() {
     private lateinit var disconnectButton: Button
     private lateinit var statusText: TextView
     private lateinit var logText: TextView
+
+    // Store current config
+    private var currentSshHost: String = ""
+    private var currentSshPort: String = ""
+    private var currentSshUser: String = ""
+    private var currentSshPass: String = ""
+    private var currentProxyHost: String = ""
+    private var currentProxyPort: String = ""
+    private var currentPayload: String = ""
+
+    private val VPN_REQUEST_CODE = 100
 
     private val statusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -47,6 +59,7 @@ class HttpCustomActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_http_custom)
 
+        // Initialize views
         sshHostInput = findViewById(R.id.sshHostInput)
         sshPortInput = findViewById(R.id.sshPortInput)
         sshUsernameInput = findViewById(R.id.sshUsernameInput)
@@ -81,10 +94,19 @@ class HttpCustomActivity : AppCompatActivity() {
             addLog("[Config] Payload: ${if (payload.length > 50) payload.substring(0, 50) + "..." else payload}")
             addLog("[INFO] Connect button pressed")
 
-            updateStatus("Connecting...", resources.getColor(android.R.color.holo_orange_dark))
-            disconnectButton.isEnabled = true
+            updateStatus("Requesting VPN permission...", resources.getColor(android.R.color.holo_orange_dark))
 
-            startVpnService(sshHost, sshPort, sshUser, sshPass, proxyHost, proxyPort, payload)
+            // Store config values
+            currentSshHost = sshHost
+            currentSshPort = sshPort
+            currentSshUser = sshUser
+            currentSshPass = sshPass
+            currentProxyHost = proxyHost
+            currentProxyPort = proxyPort
+            currentPayload = payload
+
+            // Request VPN permission first
+            requestVpnPermission()
         }
 
         disconnectButton.setOnClickListener {
@@ -95,17 +117,42 @@ class HttpCustomActivity : AppCompatActivity() {
         }
     }
 
-    private fun startVpnService(sshHost: String, sshPort: String, sshUser: String, sshPass: String,
-                                proxyHost: String, proxyPort: String, payload: String) {
+    private fun requestVpnPermission() {
+        val intent = VpnService.prepare(this)
+        if (intent != null) {
+            // Permission not granted yet — show the system dialog
+            startActivityForResult(intent, VPN_REQUEST_CODE)
+        } else {
+            // Permission already granted
+            startVpnService()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == VPN_REQUEST_CODE) {
+            if (resultCode == RESULT_OK) {
+                // Permission granted
+                startVpnService()
+            } else {
+                addLog("[ERROR] VPN permission denied")
+                updateStatus("VPN permission denied", resources.getColor(android.R.color.holo_red_dark))
+            }
+        }
+    }
+
+    private fun startVpnService() {
         val intent = Intent(this, CustomVpnService::class.java)
-        intent.putExtra("sshHost", sshHost)
-        intent.putExtra("sshPort", sshPort)
-        intent.putExtra("sshUser", sshUser)
-        intent.putExtra("sshPass", sshPass)
-        intent.putExtra("proxyHost", proxyHost)
-        intent.putExtra("proxyPort", proxyPort)
-        intent.putExtra("payload", payload)
+        intent.putExtra("sshHost", currentSshHost)
+        intent.putExtra("sshPort", currentSshPort)
+        intent.putExtra("sshUser", currentSshUser)
+        intent.putExtra("sshPass", currentSshPass)
+        intent.putExtra("proxyHost", currentProxyHost)
+        intent.putExtra("proxyPort", currentProxyPort)
+        intent.putExtra("payload", currentPayload)
         startService(intent)
+        updateStatus("Connecting...", resources.getColor(android.R.color.holo_orange_dark))
+        disconnectButton.isEnabled = true
     }
 
     private fun stopVpnService() {
