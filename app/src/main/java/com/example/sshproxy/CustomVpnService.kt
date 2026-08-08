@@ -190,6 +190,7 @@ class CustomVpnService : VpnService() {
 
     private fun setupVpn() {
         try {
+            // Build VPN interface
             vpnInterface = Builder()
                 .addAddress("10.0.0.2", 32)
                 .addRoute("0.0.0.0", 0)
@@ -202,9 +203,8 @@ class CustomVpnService : VpnService() {
             LogManager.addLog("ssh forward successfully")
             LogManager.addLog("ssh connected")
             LogManager.addLog("set UDPGW 127.0.0.1:7300")
-            LogManager.addLog("HTTP Custom ready to use")
 
-            // Start traffic router
+            // Start Traffic Router
             if (tunnelSocket != null && vpnInterface != null) {
                 trafficRouter = TrafficRouter(
                     this,
@@ -213,6 +213,7 @@ class CustomVpnService : VpnService() {
                 )
                 trafficRouter?.start()
                 LogManager.addLog("Traffic router started")
+                LogManager.addLog("HTTP Custom ready to use")
             } else {
                 LogManager.addLog("[ERROR] Tunnel socket or VPN interface is null")
                 showNotification("VPN setup failed")
@@ -221,9 +222,10 @@ class CustomVpnService : VpnService() {
                 return
             }
 
-            // Start ping to check connectivity
+            // Start ping
             startPing()
 
+            // Keep service alive
             while (isConnected) {
                 Thread.sleep(1000)
             }
