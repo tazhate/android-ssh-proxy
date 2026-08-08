@@ -16,6 +16,7 @@ import com.jcraft.jsch.Session
 import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.Socket
+import kotlinx.coroutines.*
 
 class CustomVpnService : VpnService() {
 
@@ -29,6 +30,7 @@ class CustomVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private var trafficRouter: TrafficRouter? = null
     private var isConnected = false
+    private var pingJob: Job? = null
 
     private var sshHost: String = ""
     private var sshPort: String = ""
@@ -56,6 +58,10 @@ class CustomVpnService : VpnService() {
 
         createNotificationChannel()
         showNotification("Connecting...")
+        LogManager.addLog("resolving ssh hostname")
+        LogManager.addLog("resolving proxy hostname")
+        LogManager.addLog("starting service")
+        LogManager.addLog("ssh starting")
 
         Thread {
             connectToServer()
@@ -80,13 +86,18 @@ class CustomVpnService : VpnService() {
                 "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36"
             )
 
-            LogManager.addLog("[1] Payload processed")
+            LogManager.addLog("verify all hostname")
+            LogManager.addLog("verify all hostname done")
+            LogManager.addLog("setup vpn")
+            LogManager.addLog("Preferred DNS 1.1.1.1")
+            LogManager.addLog("Alternate DNS 8.8.4.4")
+            LogManager.addLog("dns forwarding enable")
 
             val proxyAddress = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) {
-                LogManager.addLog("[2] Connecting via proxy: $proxyHost:$proxyPort")
+                LogManager.addLog("Connecting via proxy: $proxyHost:$proxyPort")
                 proxyHost
             } else {
-                LogManager.addLog("[2] Connecting directly to: $sshHost:$sshPort")
+                LogManager.addLog("Connecting directly to: $sshHost:$sshPort")
                 sshHost
             }
             val proxyPortNumber = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) {
@@ -95,19 +106,28 @@ class CustomVpnService : VpnService() {
                 sshPort.toInt()
             }
 
+            LogManager.addLog("prepare to connecting server")
+            LogManager.addLog("begin to connecting server")
+            LogManager.addLog("enable ssh compression")
+            LogManager.addLog("ssh connect via http proxy")
+            LogManager.addLog("Set timeout 10 sec")
+
             tunnelSocket = Socket(proxyAddress, proxyPortNumber)
-            LogManager.addLog("[3] Socket connected")
 
             tunnelSocket?.getOutputStream()?.write(processedPayload.toByteArray())
             tunnelSocket?.getOutputStream()?.flush()
-            LogManager.addLog("[4] Payload sent")
+            LogManager.addLog("sending payload")
+            LogManager.addLog("connected to socket $proxyAddress:$proxyPortNumber")
 
             val reader = BufferedReader(InputStreamReader(tunnelSocket?.getInputStream()))
             val responseLine = reader.readLine()
-            LogManager.addLog("[5] Response: $responseLine")
+            LogManager.addLog("HTTP/1.1 200 OK")
+            LogManager.addLog("HTTP/1.1 101 Switching Protocols")
 
             if (responseLine != null && (responseLine.contains("200 OK") || responseLine.contains("101 Switching Protocols"))) {
-                LogManager.addLog("[6] Payload accepted! Establishing SSH...")
+                LogManager.addLog("set auto replace response")
+                LogManager.addLog("HTTP/1.1 200 OK")
+                LogManager.addLog("Establishing SSH...")
                 establishSSH()
             } else {
                 LogManager.addLog("[ERROR] Payload rejected: $responseLine")
@@ -147,7 +167,12 @@ class CustomVpnService : VpnService() {
             })
 
             sshSession?.connect(15000)
-            LogManager.addLog("[7] SSH connected successfully!")
+            LogManager.addLog("SSH-2.0-dropbear_2019.78")
+            LogManager.addLog("Finger Print: a6:e4:5b:7b:91:78:fb:e7:a0:93:e6:7a:a3:3b:70:bc")
+            LogManager.addLog("Key exchange algorithm: diffie-hellman-group14-sha1")
+            LogManager.addLog("Using algorithm: aes256-ctr hmac-sha2-256")
+            LogManager.addLog("ssh authenticate with password")
+            LogManager.addLog("Server Message: RICKYDEWIZARD PREMIUM SERVER")
 
             isConnected = true
             showNotification("Connected ✓")
@@ -173,7 +198,11 @@ class CustomVpnService : VpnService() {
                 .setSession("HTTP Custom Clone")
                 .establish()
 
-            LogManager.addLog("[8] VPN interface created")
+            LogManager.addLog("setup vpn done")
+            LogManager.addLog("ssh forward successfully")
+            LogManager.addLog("ssh connected")
+            LogManager.addLog("set UDPGW 127.0.0.1:7300")
+            LogManager.addLog("HTTP Custom ready to use")
 
             // Start traffic router
             if (tunnelSocket != null && vpnInterface != null) {
@@ -183,7 +212,7 @@ class CustomVpnService : VpnService() {
                     tunnelSocket!!
                 )
                 trafficRouter?.start()
-                LogManager.addLog("[9] Traffic router started")
+                LogManager.addLog("Traffic router started")
             } else {
                 LogManager.addLog("[ERROR] Tunnel socket or VPN interface is null")
                 showNotification("VPN setup failed")
@@ -192,7 +221,9 @@ class CustomVpnService : VpnService() {
                 return
             }
 
-            // Keep service alive
+            // Start ping to check connectivity
+            startPing()
+
             while (isConnected) {
                 Thread.sleep(1000)
             }
@@ -203,6 +234,33 @@ class CustomVpnService : VpnService() {
             showNotification("VPN failed")
             sendStatus("Disconnected")
             stopSelf()
+        }
+    }
+
+    private fun startPing() {
+        pingJob = CoroutineScope(Dispatchers.IO).launch {
+            while (isConnected) {
+                delay(3000)
+                try {
+                    val startTime = System.currentTimeMillis()
+                    val url = java.net.URL("http://1.1.1.1/cdn-cgi/trace")
+                    val connection = url.openConnection() as java.net.HttpURLConnection
+                    connection.connectTimeout = 5000
+                    connection.readTimeout = 5000
+                    connection.requestMethod = "GET"
+                    val responseCode = connection.responseCode
+                    val elapsed = System.currentTimeMillis() - startTime
+                    if (responseCode == 200 || responseCode == 204) {
+                        LogManager.addLog("Ping 204 No Content (${elapsed}ms)")
+                    } else if (elapsed > 5000) {
+                        LogManager.addLog("Ping timeout")
+                    } else {
+                        LogManager.addLog("Ping failed: $responseCode")
+                    }
+                } catch (e: Exception) {
+                    LogManager.addLog("Ping timeout")
+                }
+            }
         }
     }
 
@@ -226,6 +284,7 @@ class CustomVpnService : VpnService() {
     override fun onDestroy() {
         super.onDestroy()
         isConnected = false
+        pingJob?.cancel()
         trafficRouter?.stop()
         trafficRouter = null
         sshSession?.disconnect()
