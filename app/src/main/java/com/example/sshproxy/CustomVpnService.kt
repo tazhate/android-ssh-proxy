@@ -62,6 +62,7 @@ class CustomVpnService : VpnService() {
         LogManager.addLog("resolving proxy hostname")
         LogManager.addLog("starting service")
         LogManager.addLog("ssh starting")
+        LogManager.addLog("WakeLock acquire")
 
         Thread {
             connectToServer()
@@ -190,7 +191,6 @@ class CustomVpnService : VpnService() {
 
     private fun setupVpn() {
         try {
-            // Build VPN interface
             vpnInterface = Builder()
                 .addAddress("10.0.0.2", 32)
                 .addRoute("0.0.0.0", 0)
@@ -204,7 +204,6 @@ class CustomVpnService : VpnService() {
             LogManager.addLog("ssh connected")
             LogManager.addLog("set UDPGW 127.0.0.1:7300")
 
-            // Start Traffic Router
             if (tunnelSocket != null && vpnInterface != null) {
                 trafficRouter = TrafficRouter(
                     this,
@@ -222,10 +221,8 @@ class CustomVpnService : VpnService() {
                 return
             }
 
-            // Start ping
             startPing()
 
-            // Keep service alive
             while (isConnected) {
                 Thread.sleep(1000)
             }
