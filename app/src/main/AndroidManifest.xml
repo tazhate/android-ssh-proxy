@@ -27,9 +27,8 @@
             </intent-filter>
         </activity>
 
-        <activity
-            
-            android:exported="false" />
+        <!-- ❌ REMOVE THIS IF IT EXISTS (no android:name) -->
+        <!-- <activity android:exported="true"></activity> -->
 
         <service
             android:name=".CustomVpnService"
