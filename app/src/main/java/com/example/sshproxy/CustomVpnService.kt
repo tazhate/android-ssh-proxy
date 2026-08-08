@@ -7,6 +7,7 @@ import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.example.sshproxy.payload.PayloadProcessor
@@ -23,6 +24,7 @@ class CustomVpnService : VpnService() {
     companion object {
         private const val CHANNEL_ID = "vpn_channel"
         private const val NOTIFICATION_ID = 1
+        private const val TAG = "CustomVpnService"
     }
 
     private var sshSession: Session? = null
@@ -40,7 +42,16 @@ class CustomVpnService : VpnService() {
     private var proxyPort: String = ""
     private var payload: String = ""
 
+    // Set this to false to test without traffic router
+    private val USE_TRAFFIC_ROUTER = true
+
+    override fun onCreate() {
+        super.onCreate()
+        Log.d(TAG, "SERVICE CREATED")
+    }
+
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        Log.d(TAG, "onStartCommand called")
         intent?.let {
             sshHost = it.getStringExtra("sshHost") ?: ""
             sshPort = it.getStringExtra("sshPort") ?: ""
@@ -52,6 +63,7 @@ class CustomVpnService : VpnService() {
         }
 
         if (sshHost.isEmpty() || sshPort.isEmpty() || sshUser.isEmpty() || sshPass.isEmpty()) {
+            Log.d(TAG, "Missing SSH details, stopping")
             stopSelf()
             return START_NOT_STICKY
         }
@@ -77,16 +89,12 @@ class CustomVpnService : VpnService() {
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
 
-    // ============================================================
-    // RETRY LOGIC WITH ROTATE SUPPORT
-    // ============================================================
     private fun connectToServer() {
-        val maxRetries = 10  // Total attempts before giving up
+        val maxRetries = 10
         var attempt = 0
 
         while (attempt < maxRetries && !isConnected) {
             try {
-                // Process payload with the current rotate host
                 val processedPayload = PayloadProcessor.processPayload(
                     payload,
                     sshHost,
@@ -138,11 +146,10 @@ class CustomVpnService : VpnService() {
                     LogManager.addLog("HTTP/1.1 200 OK")
                     LogManager.addLog("Establishing SSH...")
                     establishSSH()
-                    return  // Success — exit the loop
+                    return
                 } else {
                     LogManager.addLog("[ERROR] Problem connecting to SSH")
                     LogManager.addLog("Retrying with next host...")
-                    // Increment rotate index automatically
                     PayloadProcessor.rotateIndex++
                     tunnelSocket?.close()
                     tunnelSocket = null
@@ -157,12 +164,9 @@ class CustomVpnService : VpnService() {
             }
 
             attempt++
-
-            // Wait before retry
             try { Thread.sleep(2000) } catch (_: InterruptedException) {}
         }
 
-        // All hosts failed
         if (!isConnected) {
             LogManager.addLog("[ERROR] All hosts failed. Stopping service.")
             showNotification("Connection failed")
@@ -224,29 +228,47 @@ class CustomVpnService : VpnService() {
                 .setSession("HTTP Custom Clone")
                 .establish()
 
-            LogManager.addLog("setup vpn done")
-            LogManager.addLog("ssh forward successfully")
-            LogManager.addLog("ssh connected")
-            LogManager.addLog("set UDPGW 127.0.0.1:7300")
-
-            // Start Traffic Router
-            if (tunnelSocket != null && vpnInterface != null) {
-                trafficRouter = TrafficRouter(
-                    this,
-                    vpnInterface!!.fileDescriptor,
-                    tunnelSocket!!
-                )
-                trafficRouter?.start()
-                LogManager.addLog("Traffic router started")
-                LogManager.addLog("HTTP Custom ready to use")
+            if (vpnInterface != null) {
+                LogManager.addLog("VPN interface created (FD: ${vpnInterface?.fileDescriptor})")
+                Log.d(TAG, "VPN interface created successfully")
             } else {
-                LogManager.addLog("[ERROR] Tunnel socket or VPN interface is null")
-                showNotification("VPN setup failed")
+                LogManager.addLog("VPN interface is NULL!")
+                Log.d(TAG, "VPN interface is NULL!")
+                showNotification("VPN failed")
                 sendStatus("Disconnected")
                 stopSelf()
                 return
             }
 
+            LogManager.addLog("setup vpn done")
+            LogManager.addLog("ssh forward successfully")
+            LogManager.addLog("ssh connected")
+            LogManager.addLog("set UDPGW 127.0.0.1:7300")
+
+            if (USE_TRAFFIC_ROUTER) {
+                if (tunnelSocket != null && vpnInterface != null) {
+                    trafficRouter = TrafficRouter(
+                        this,
+                        vpnInterface!!.fileDescriptor,
+                        tunnelSocket!!
+                    )
+                    trafficRouter?.start()
+                    LogManager.addLog("Traffic router started")
+                    Log.d(TAG, "Traffic router started")
+                } else {
+                    LogManager.addLog("[ERROR] Tunnel socket or VPN interface is null")
+                    Log.d(TAG, "ERROR: Tunnel socket or VPN interface is null")
+                    showNotification("VPN setup failed")
+                    sendStatus("Disconnected")
+                    stopSelf()
+                    return
+                }
+            } else {
+                LogManager.addLog("Traffic router disabled (testing mode)")
+                Log.d(TAG, "Traffic router disabled")
+            }
+
+            LogManager.addLog("HTTP Custom ready to use")
             startPing()
 
             while (isConnected) {
@@ -255,6 +277,7 @@ class CustomVpnService : VpnService() {
 
         } catch (e: Exception) {
             LogManager.addLog("[ERROR] VPN setup failed: ${e.message}")
+            Log.d(TAG, "VPN setup failed", e)
             e.printStackTrace()
             showNotification("VPN failed")
             sendStatus("Disconnected")
@@ -321,5 +344,6 @@ class CustomVpnService : VpnService() {
         stopForeground(true)
         sendStatus("Disconnected")
         LogManager.addLog("VPN stopped")
+        Log.d(TAG, "onDestroy finished")
     }
 }
