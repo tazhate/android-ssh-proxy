@@ -5,7 +5,7 @@ import java.util.regex.Matcher;
 
 public class PayloadProcessor {
 
-    private static int rotateIndex = 0;
+    public static int rotateIndex = 0;  // ← Changed from private to public
 
     public static String processPayload(String template, String host, String port, String proxy, String userAgent) {
         String payload = template;
@@ -30,7 +30,7 @@ public class PayloadProcessor {
             String[] hosts = rotateMatcher.group(1).split(";");
             String selectedHost = hosts[rotateIndex % hosts.length];
             payload = payload.replace(rotateMatcher.group(0), selectedHost);
-            rotateIndex++;
+            // rotateIndex is incremented in CustomVpnService on failure
         }
 
         return payload;
