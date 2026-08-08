@@ -189,6 +189,14 @@
                 android:textSize="10sp"
                 android:typeface="monospace"
                 android:textColor="#00ff00" />
+            <Button
+    android:id="@+id/viewLogsButton"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="View Full Logs"
+    android:backgroundTint="#2196F3"
+    android:textColor="#FFFFFF"
+    android:layout_marginTop="12dp" />
 
         </ScrollView>
 
