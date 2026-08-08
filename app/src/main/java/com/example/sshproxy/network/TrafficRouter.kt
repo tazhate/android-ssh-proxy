@@ -1,5 +1,6 @@
 package com.example.sshproxy.network
 
+import android.util.Log
 import java.io.FileDescriptor
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -12,8 +13,10 @@ class TrafficRouter(
     private val tunnelSocket: Socket
 ) {
     private var isRunning = false
+    private val TAG = "TrafficRouter"
 
     fun start() {
+        Log.d(TAG, "start() called")
         LogManager.addLog("TrafficRouter start() called")
         isRunning = true
         Thread {
@@ -24,10 +27,13 @@ class TrafficRouter(
                 val tunnelOutput = tunnelSocket.getOutputStream()
                 val buffer = ByteArray(32767)
 
+                Log.d(TAG, "TUN FD: $tunFileDescriptor, Socket: ${tunnelSocket.remoteSocketAddress}")
                 LogManager.addLog("TUN FD: $tunFileDescriptor, Socket: ${tunnelSocket.remoteSocketAddress}")
+                Log.d(TAG, "Starting router threads")
                 LogManager.addLog("Starting router threads")
 
                 val readThread = Thread {
+                    Log.d(TAG, "Read thread started")
                     LogManager.addLog("Read thread started")
                     while (isRunning) {
                         try {
@@ -35,20 +41,25 @@ class TrafficRouter(
                             if (len > 0) {
                                 tunnelOutput.write(buffer, 0, len)
                                 tunnelOutput.flush()
+                                Log.d(TAG, "Read thread: wrote $len bytes to tunnel")
                             }
                         } catch (e: Exception) {
                             if (isRunning) {
+                                Log.e(TAG, "Read thread error", e)
                                 LogManager.addLog("Read thread error: ${e.message}")
                             } else {
+                                Log.d(TAG, "Read thread stopped due to isRunning = false")
                                 LogManager.addLog("Read thread stopped due to isRunning = false")
                             }
                             break
                         }
                     }
+                    Log.d(TAG, "Read thread stopped")
                     LogManager.addLog("Read thread stopped")
                 }
 
                 val writeThread = Thread {
+                    Log.d(TAG, "Write thread started")
                     LogManager.addLog("Write thread started")
                     while (isRunning) {
                         try {
@@ -56,16 +67,20 @@ class TrafficRouter(
                             if (len > 0) {
                                 outputStream.write(buffer, 0, len)
                                 outputStream.flush()
+                                Log.d(TAG, "Write thread: wrote $len bytes to TUN")
                             }
                         } catch (e: Exception) {
                             if (isRunning) {
+                                Log.e(TAG, "Write thread error", e)
                                 LogManager.addLog("Write thread error: ${e.message}")
                             } else {
+                                Log.d(TAG, "Write thread stopped due to isRunning = false")
                                 LogManager.addLog("Write thread stopped due to isRunning = false")
                             }
                             break
                         }
                     }
+                    Log.d(TAG, "Write thread stopped")
                     LogManager.addLog("Write thread stopped")
                 }
 
@@ -75,12 +90,14 @@ class TrafficRouter(
                 writeThread.join()
 
             } catch (e: Exception) {
+                Log.e(TAG, "Router error", e)
                 LogManager.addLog("Router error: ${e.message}")
             }
         }.start()
     }
 
     fun stop() {
+        Log.d(TAG, "stop() called")
         LogManager.addLog("TrafficRouter stop() called")
         isRunning = false
     }
