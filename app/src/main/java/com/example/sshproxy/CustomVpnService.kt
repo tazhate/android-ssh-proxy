@@ -1,5 +1,5 @@
 package com.example.sshproxy
-import com.example.sshproxy.network.TrafficRouter
+
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
@@ -10,6 +10,7 @@ import android.os.ParcelFileDescriptor
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.example.sshproxy.payload.PayloadProcessor
+import com.example.sshproxy.network.TrafficRouter
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import java.io.BufferedReader
@@ -26,6 +27,7 @@ class CustomVpnService : VpnService() {
     private var sshSession: Session? = null
     private var tunnelSocket: Socket? = null
     private var vpnInterface: ParcelFileDescriptor? = null
+    private var trafficRouter: TrafficRouter? = null
     private var isConnected = false
 
     private var sshHost: String = ""
@@ -166,21 +168,31 @@ class CustomVpnService : VpnService() {
             vpnInterface = Builder()
                 .addAddress("10.0.0.2", 32)
                 .addRoute("0.0.0.0", 0)
+                .addDnsServer("1.1.1.1")
+                .addDnsServer("8.8.8.8")
                 .setSession("HTTP Custom Clone")
                 .establish()
 
-            LogManager.addLog("[8] VPN ready! Tunnel is live.")
-            showNotification("Connected ✓")
+            LogManager.addLog("[8] VPN interface created")
 
             // Start traffic router
-            tunnelSocket?.let { socket ->
-                vpnInterface?.fileDescriptor?.let { fd ->
-                    val trafficRouter = TrafficRouter(this, fd, socket)
-                    trafficRouter.start()
-                    LogManager.addLog("Traffic router started")
-                }
+            if (tunnelSocket != null && vpnInterface != null) {
+                trafficRouter = TrafficRouter(
+                    this,
+                    vpnInterface!!.fileDescriptor,
+                    tunnelSocket!!
+                )
+                trafficRouter?.start()
+                LogManager.addLog("[9] Traffic router started")
+            } else {
+                LogManager.addLog("[ERROR] Tunnel socket or VPN interface is null")
+                showNotification("VPN setup failed")
+                sendStatus("Disconnected")
+                stopSelf()
+                return
             }
 
+            // Keep service alive
             while (isConnected) {
                 Thread.sleep(1000)
             }
@@ -214,9 +226,14 @@ class CustomVpnService : VpnService() {
     override fun onDestroy() {
         super.onDestroy()
         isConnected = false
+        trafficRouter?.stop()
+        trafficRouter = null
         sshSession?.disconnect()
+        sshSession = null
         tunnelSocket?.close()
+        tunnelSocket = null
         vpnInterface?.close()
+        vpnInterface = null
         stopForeground(true)
         sendStatus("Disconnected")
         LogManager.addLog("VPN stopped")
