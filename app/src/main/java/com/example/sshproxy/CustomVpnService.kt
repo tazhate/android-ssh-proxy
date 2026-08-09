@@ -265,18 +265,25 @@ class CustomVpnService : VpnService() {
             LogManager.addLog("ssh connected")
             LogManager.addLog("set UDPGW 127.0.0.1:7300")
 
+            // ============================================================
+            //  START TRAFFIC ROUTER WITH DEBUG LOGS
+            // ============================================================
+            LogManager.addLog("Checking USE_TRAFFIC_ROUTER = $USE_TRAFFIC_ROUTER")
             if (USE_TRAFFIC_ROUTER) {
+                LogManager.addLog("Traffic router enabled. Creating...")
                 if (tunnelSocket != null && vpnInterface != null && !tunnelSocket!!.isClosed) {
+                    LogManager.addLog("Creating TrafficRouter instance...")
                     trafficRouter = TrafficRouter(
                         this,
                         vpnInterface!!.fileDescriptor,
                         tunnelSocket!!
                     )
+                    LogManager.addLog("TrafficRouter instance created, calling start()...")
                     trafficRouter?.start()
-                    LogManager.addLog("Traffic router started")
+                    LogManager.addLog("Traffic router start() called successfully")
                     Log.d(TAG, "Traffic router started")
                 } else {
-                    LogManager.addLog("[ERROR] Tunnel socket is closed before starting router")
+                    LogManager.addLog("[ERROR] Tunnel socket is closed or null before starting router")
                     Log.d(TAG, "ERROR: Tunnel socket is closed")
                     showNotification("VPN setup failed")
                     sendStatus("Disconnected")
