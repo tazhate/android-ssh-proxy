@@ -14,10 +14,11 @@ class TrafficRouter(
 ) {
     private val TAG = "TrafficRouter"
     private var isRunning = false
+    private val keepAliveInterval = 25000L
 
     fun start() {
         try {
-            Log.d(TAG, "🔥🔥🔥 TrafficRouter.start() CALLED! 🔥🔥🔥")
+            Log.d(TAG, "🔥 TrafficRouter.start() CALLED!")
             LogManager.addLog("TrafficRouter start() called")
 
             isRunning = true
@@ -34,9 +35,29 @@ class TrafficRouter(
 
                     Log.d(TAG, "TUN FD: $tunFileDescriptor, Socket: ${tunnelSocket.remoteSocketAddress}")
                     LogManager.addLog("TUN FD: $tunFileDescriptor, Socket: ${tunnelSocket.remoteSocketAddress}")
-                    Log.d(TAG, "Starting router threads")
-                    LogManager.addLog("Starting router threads")
 
+                    // ============================================================
+                    // KEEP‑ALIVE THREAD
+                    // ============================================================
+                    val keepAliveThread = Thread {
+                        while (isRunning) {
+                            try {
+                                Thread.sleep(keepAliveInterval)
+                                if (isRunning) {
+                                    // Send a tiny keep‑alive packet (a single space)
+                                    tunnelOutput.write(32)
+                                    tunnelOutput.flush()
+                                }
+                            } catch (e: Exception) {
+                                // ignore
+                            }
+                        }
+                    }
+                    keepAliveThread.start()
+
+                    // ============================================================
+                    // READ THREAD (TUN → SSH)
+                    // ============================================================
                     val readThread = Thread {
                         Log.d(TAG, "Read thread started")
                         LogManager.addLog("Read thread started")
@@ -63,6 +84,9 @@ class TrafficRouter(
                         LogManager.addLog("Read thread stopped")
                     }
 
+                    // ============================================================
+                    // WRITE THREAD (SSH → TUN)
+                    // ============================================================
                     val writeThread = Thread {
                         Log.d(TAG, "Write thread started")
                         LogManager.addLog("Write thread started")
@@ -93,6 +117,7 @@ class TrafficRouter(
                     writeThread.start()
                     readThread.join()
                     writeThread.join()
+                    keepAliveThread.join()
 
                 } catch (e: Exception) {
                     Log.e(TAG, "Router thread error", e)
@@ -109,5 +134,10 @@ class TrafficRouter(
         Log.d(TAG, "stop() called")
         LogManager.addLog("TrafficRouter stop() called")
         isRunning = false
+        try {
+            tunnelSocket.close()
+        } catch (e: Exception) {
+            // ignore
+        }
     }
 }
