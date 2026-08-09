@@ -8,8 +8,10 @@ import android.net.VpnService
 import android.os.Bundle
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ScrollView
 import android.widget.TextView
 import androidx.appcompat.app.AppCompatActivity
+import androidx.lifecycle.Observer
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 
 class HttpCustomActivity : AppCompatActivity() {
@@ -26,7 +28,6 @@ class HttpCustomActivity : AppCompatActivity() {
     private lateinit var statusText: TextView
     private lateinit var logText: TextView
 
-    // Store current config
     private var currentSshHost: String = ""
     private var currentSshPort: String = ""
     private var currentSshUser: String = ""
@@ -59,7 +60,6 @@ class HttpCustomActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_http_custom)
 
-        // Initialize views
         sshHostInput = findViewById(R.id.sshHostInput)
         sshPortInput = findViewById(R.id.sshPortInput)
         sshUsernameInput = findViewById(R.id.sshUsernameInput)
@@ -72,7 +72,18 @@ class HttpCustomActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         logText = findViewById(R.id.logText)
 
+        // Register broadcast receiver for status updates
         LocalBroadcastManager.getInstance(this).registerReceiver(statusReceiver, IntentFilter("VPN_STATUS"))
+
+        // ============================================================
+        // OBSERVE LOG MANAGER TO DISPLAY LOGS IN UI
+        // ============================================================
+        LogManager.logs.observe(this, Observer { logs ->
+            logText.text = logs.joinToString("\n")
+            // Auto-scroll to bottom
+            val scrollView = findViewById<ScrollView>(R.id.scrollView)
+            scrollView?.post { scrollView.fullScroll(View.FOCUS_DOWN) }
+        })
 
         connectButton.setOnClickListener {
             val sshHost = sshHostInput.text.toString().trim()
@@ -84,19 +95,18 @@ class HttpCustomActivity : AppCompatActivity() {
             val payload = payloadInput.text.toString().trim()
 
             if (sshHost.isEmpty() || sshPort.isEmpty() || sshUser.isEmpty() || sshPass.isEmpty()) {
-                addLog("[ERROR] Please fill in SSH details")
+                LogManager.addLog("[ERROR] Please fill in SSH details")
                 updateStatus("Error - Missing SSH details", resources.getColor(android.R.color.holo_red_dark))
                 return@setOnClickListener
             }
 
-            addLog("[Config] SSH: $sshHost:$sshPort")
-            addLog("[Config] Proxy: $proxyHost:$proxyPort")
-            addLog("[Config] Payload: ${if (payload.length > 50) payload.substring(0, 50) + "..." else payload}")
-            addLog("[INFO] Connect button pressed")
+            LogManager.addLog("[Config] SSH: $sshHost:$sshPort")
+            LogManager.addLog("[Config] Proxy: $proxyHost:$proxyPort")
+            LogManager.addLog("[Config] Payload: ${if (payload.length > 50) payload.substring(0, 50) + "..." else payload}")
+            LogManager.addLog("[INFO] Connect button pressed")
 
             updateStatus("Requesting VPN permission...", resources.getColor(android.R.color.holo_orange_dark))
 
-            // Store config values
             currentSshHost = sshHost
             currentSshPort = sshPort
             currentSshUser = sshUser
@@ -105,12 +115,11 @@ class HttpCustomActivity : AppCompatActivity() {
             currentProxyPort = proxyPort
             currentPayload = payload
 
-            // Request VPN permission first
             requestVpnPermission()
         }
 
         disconnectButton.setOnClickListener {
-            addLog("[INFO] Disconnect button pressed")
+            LogManager.addLog("[INFO] Disconnect button pressed")
             stopVpnService()
             updateStatus("Disconnected", resources.getColor(android.R.color.holo_red_dark))
             disconnectButton.isEnabled = false
@@ -120,10 +129,8 @@ class HttpCustomActivity : AppCompatActivity() {
     private fun requestVpnPermission() {
         val intent = VpnService.prepare(this)
         if (intent != null) {
-            // Permission not granted yet — show the system dialog
             startActivityForResult(intent, VPN_REQUEST_CODE)
         } else {
-            // Permission already granted
             startVpnService()
         }
     }
@@ -132,10 +139,9 @@ class HttpCustomActivity : AppCompatActivity() {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == VPN_REQUEST_CODE) {
             if (resultCode == RESULT_OK) {
-                // Permission granted
                 startVpnService()
             } else {
-                addLog("[ERROR] VPN permission denied")
+                LogManager.addLog("[ERROR] VPN permission denied")
                 updateStatus("VPN permission denied", resources.getColor(android.R.color.holo_red_dark))
             }
         }
@@ -151,8 +157,6 @@ class HttpCustomActivity : AppCompatActivity() {
         intent.putExtra("proxyPort", currentProxyPort)
         intent.putExtra("payload", currentPayload)
         startService(intent)
-        updateStatus("Connecting...", resources.getColor(android.R.color.holo_orange_dark))
-        disconnectButton.isEnabled = true
     }
 
     private fun stopVpnService() {
@@ -164,16 +168,6 @@ class HttpCustomActivity : AppCompatActivity() {
         runOnUiThread {
             statusText.text = "Status: $status"
             statusText.setTextColor(color)
-        }
-    }
-
-    fun addLog(message: String) {
-        runOnUiThread {
-            logText.append("\n$message")
-            val scrollAmount = logText.layout?.getLineTop(logText.lineCount) ?: 0
-            if (scrollAmount > logText.height) {
-                logText.scrollTo(0, scrollAmount - logText.height)
-            }
         }
     }
 
