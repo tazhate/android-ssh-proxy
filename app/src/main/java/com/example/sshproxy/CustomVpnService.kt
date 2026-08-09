@@ -130,6 +130,7 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("Set timeout 10 sec")
 
                 tunnelSocket = Socket(proxyAddress, proxyPortNumber)
+                tunnelSocket?.keepAlive = true  // Keep socket alive
 
                 tunnelSocket?.getOutputStream()?.write(processedPayload.toByteArray())
                 tunnelSocket?.getOutputStream()?.flush()
@@ -183,6 +184,7 @@ class CustomVpnService : VpnService() {
             sshSession?.setConfig("StrictHostKeyChecking", "no")
             sshSession?.setConfig("ServerAliveInterval", "30")
             sshSession?.setConfig("ServerAliveCountMax", "3")
+            sshSession?.setConfig("TCPKeepAlive", "yes")
 
             sshSession?.setSocketFactory(object : com.jcraft.jsch.SocketFactory {
                 override fun createSocket(host: String?, port: Int): Socket {
@@ -265,9 +267,7 @@ class CustomVpnService : VpnService() {
             LogManager.addLog("ssh connected")
             LogManager.addLog("set UDPGW 127.0.0.1:7300")
 
-            // ============================================================
-            //  START TRAFFIC ROUTER WITH DEBUG LOGS
-            // ============================================================
+            // Start Traffic Router
             LogManager.addLog("Checking USE_TRAFFIC_ROUTER = $USE_TRAFFIC_ROUTER")
             if (USE_TRAFFIC_ROUTER) {
                 LogManager.addLog("Traffic router enabled. Creating...")
@@ -362,6 +362,8 @@ class CustomVpnService : VpnService() {
         pingJob?.cancel()
         trafficRouter?.stop()
         trafficRouter = null
+        // Wait a moment for TrafficRouter to close things
+        try { Thread.sleep(200) } catch (_: InterruptedException) {}
         sshSession?.disconnect()
         sshSession = null
         tunnelSocket?.close()
