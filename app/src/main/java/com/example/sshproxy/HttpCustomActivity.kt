@@ -6,6 +6,7 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.VpnService
 import android.os.Bundle
+import android.view.View
 import android.widget.Button
 import android.widget.EditText
 import android.widget.ScrollView
@@ -72,12 +73,9 @@ class HttpCustomActivity : AppCompatActivity() {
         statusText = findViewById(R.id.statusText)
         logText = findViewById(R.id.logText)
 
-        // Register broadcast receiver for status updates
         LocalBroadcastManager.getInstance(this).registerReceiver(statusReceiver, IntentFilter("VPN_STATUS"))
 
-        // ============================================================
-        // OBSERVE LOG MANAGER TO DISPLAY LOGS IN UI
-        // ============================================================
+        // Observe LogManager to display logs in UI
         LogManager.logs.observe(this, Observer { logs ->
             logText.text = logs.joinToString("\n")
             // Auto-scroll to bottom
