@@ -15,7 +15,6 @@ object LogManager {
         val currentList = _logs.value?.toMutableList() ?: mutableListOf()
         currentList.add(entry)
         _logs.postValue(currentList)
-        // Also print to Android log so ADB shows it
         android.util.Log.d("LogManager", entry)
     }
 
