@@ -10,7 +10,6 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <!-- App Title -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -42,7 +41,7 @@
             android:background="@android:drawable/editbox_background"
             android:layout_marginTop="4dp" />
 
-        <!-- Remote Proxy (single field) -->
+        <!-- Remote Proxy -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -127,15 +126,16 @@
             android:background="@android:drawable/editbox_background"
             android:layout_marginTop="4dp" />
 
-        <!-- Ping Target -->
+        <!-- Ping Target (kept for backward compatibility – will be hidden later) -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Ping Target"
+            android:text="Ping Target (deprecated)"
             android:textStyle="bold"
             android:textSize="14sp"
             android:textColor="#666666"
-            android:layout_marginTop="16dp" />
+            android:layout_marginTop="16dp"
+            android:visibility="gone" />
 
         <EditText
             android:id="@+id/pingTargetInput"
@@ -146,35 +146,189 @@
             android:text="1.1.1.1"
             android:padding="12dp"
             android:background="@android:drawable/editbox_background"
-            android:layout_marginTop="4dp" />
+            android:layout_marginTop="4dp"
+            android:visibility="gone" />
 
-        <!-- Buttons -->
+        <!-- ========== ADVANCED SETTINGS ========== -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Advanced Settings"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:textColor="#333333"
+            android:layout_marginTop="24dp" />
+
+        <!-- Enable Compression -->
+        <CheckBox
+            android:id="@+id/enableCompressionCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enable Compression (zlib)"
+            android:checked="true"
+            android:layout_marginTop="8dp" />
+
+        <!-- Always Reconnect -->
+        <CheckBox
+            android:id="@+id/alwaysReconnectCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Always Reconnect (infinite retries)"
+            android:checked="false"
+            android:layout_marginTop="8dp" />
+
+        <!-- MTU -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="MTU"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="12dp" />
+
+        <EditText
+            android:id="@+id/mtuInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="1500"
+            android:inputType="number"
+            android:text="1500"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background" />
+
+        <!-- Buffer Size -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:orientation="horizontal"
-            android:layout_marginTop="16dp">
-
-            <Button
-                android:id="@+id/connectButton"
+            android:layout_marginTop="8dp">
+            <LinearLayout
                 android:layout_width="0dp"
-                android:layout_height="56dp"
+                android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:layout_marginEnd="8dp"
-                android:text="Connect"
-                android:backgroundTint="#4CAF50"
-                android:textColor="#FFFFFF" />
-
-            <Button
-                android:id="@+id/disconnectButton"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Send Buffer"
+                    android:textStyle="bold"
+                    android:textSize="14sp"
+                    android:textColor="#666666" />
+                <EditText
+                    android:id="@+id/sendBufferInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="16384"
+                    android:inputType="number"
+                    android:text="16384"
+                    android:padding="12dp"
+                    android:background="@android:drawable/editbox_background" />
+            </LinearLayout>
+            <LinearLayout
                 android:layout_width="0dp"
-                android:layout_height="56dp"
+                android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:text="Disconnect"
-                android:backgroundTint="#f44336"
-                android:textColor="#FFFFFF"
-                android:enabled="false" />
+                android:layout_marginStart="8dp"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Receive Buffer"
+                    android:textStyle="bold"
+                    android:textSize="14sp"
+                    android:textColor="#666666" />
+                <EditText
+                    android:id="@+id/receiveBufferInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="32768"
+                    android:inputType="number"
+                    android:text="32768"
+                    android:padding="12dp"
+                    android:background="@android:drawable/editbox_background" />
+            </LinearLayout>
         </LinearLayout>
+
+        <!-- Ping Settings -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ping Settings"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:textColor="#333333"
+            android:layout_marginTop="16dp" />
+
+        <!-- Ping URL -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ping URL"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/pingUrlInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="https://dns.google"
+            android:inputType="textUri"
+            android:text="https://dns.google"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background" />
+
+        <!-- Ping Interval -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ping Interval (ms)"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/pingIntervalInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="2000"
+            android:inputType="number"
+            android:text="2000"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background" />
+
+        <!-- Ping Timeout -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ping Timeout (ms)"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/pingTimeoutInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="5000"
+            android:inputType="number"
+            android:text="5000"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background" />
+
+        <!-- Single Toggle Button -->
+        <Button
+            android:id="@+id/toggleButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="24dp"
+            android:text="Connect"
+            android:backgroundTint="#4CAF50"
+            android:textColor="#FFFFFF" />
 
         <!-- Status -->
         <TextView
