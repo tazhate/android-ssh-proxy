@@ -15,10 +15,10 @@ import androidx.fragment.app.Fragment
 class ConfigFragment : Fragment() {
 
     private lateinit var sshDetailsInput: EditText
-    private lateinit var proxyHostInput: EditText
-    private lateinit var proxyPortInput: EditText
+    private lateinit var proxyInput: EditText          // single field (like HTTP Custom)
     private lateinit var payloadInput: EditText
     private lateinit var splitDelayInput: EditText
+    private lateinit var dnsInput: EditText            // NEW: DNS server
     private lateinit var pingTargetInput: EditText
     private lateinit var connectButton: Button
     private lateinit var disconnectButton: Button
@@ -32,6 +32,7 @@ class ConfigFragment : Fragment() {
     private var currentProxyPort: String = ""
     private var currentPayload: String = ""
     private var currentSplitDelay: Int = 500
+    private var currentDnsServer: String = "1.1.1.1"
     private var currentPingTarget: String = "1.1.1.1"
 
     private val VPN_REQUEST_CODE = 100
@@ -41,10 +42,10 @@ class ConfigFragment : Fragment() {
         val view = inflater.inflate(R.layout.fragment_config, container, false)
 
         sshDetailsInput = view.findViewById(R.id.sshDetailsInput)
-        proxyHostInput = view.findViewById(R.id.proxyHostInput)
-        proxyPortInput = view.findViewById(R.id.proxyPortInput)
+        proxyInput = view.findViewById(R.id.proxyInput)           // new single field
         payloadInput = view.findViewById(R.id.payloadInput)
         splitDelayInput = view.findViewById(R.id.splitDelayInput)
+        dnsInput = view.findViewById(R.id.dnsInput)               // NEW
         pingTargetInput = view.findViewById(R.id.pingTargetInput)
         connectButton = view.findViewById(R.id.connectButton)
         disconnectButton = view.findViewById(R.id.disconnectButton)
@@ -55,10 +56,10 @@ class ConfigFragment : Fragment() {
 
         connectButton.setOnClickListener {
             val sshDetails = sshDetailsInput.text.toString().trim()
-            val proxyHost = proxyHostInput.text.toString().trim()
-            val proxyPort = proxyPortInput.text.toString().trim()
+            val proxyString = proxyInput.text.toString().trim()
             val payload = payloadInput.text.toString().trim()
             val splitDelay = splitDelayInput.text.toString().toIntOrNull() ?: 500
+            val dnsServer = dnsInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.1.1.1"
             val pingTarget = pingTargetInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.1.1.1"
 
             val parseResult = parseSshDetails(sshDetails)
@@ -75,11 +76,16 @@ class ConfigFragment : Fragment() {
                 return@setOnClickListener
             }
 
-            repository.saveConfig(sshDetails, proxyHost, proxyPort, payload, splitDelay, pingTarget)
+            // Decode proxy (supports Base64 or plain host:port)
+            val (proxyHost, proxyPort) = decodeProxy(proxyString)
+
+            // Save config (including DNS)
+            repository.saveConfig(sshDetails, proxyString, payload, splitDelay, dnsServer, pingTarget)
 
             LogManager.clearLogs()
             LogManager.addLog("[Config] SSH: $host:$port@$user")
-            LogManager.addLog("[Config] Proxy: $proxyHost:$proxyPort")
+            LogManager.addLog("[Config] Proxy: $proxyHost:$proxyPort (decoded)")
+            LogManager.addLog("[Config] DNS Server: $dnsServer")
             LogManager.addLog("[Config] Split Delay: ${splitDelay}ms")
             LogManager.addLog("[Config] Ping Target: $pingTarget")
             LogManager.addLog("[Config] Payload: ${if (payload.length > 50) payload.substring(0, 50) + "..." else payload}")
@@ -95,6 +101,7 @@ class ConfigFragment : Fragment() {
             currentProxyPort = proxyPort
             currentPayload = payload
             currentSplitDelay = splitDelay
+            currentDnsServer = dnsServer
             currentPingTarget = pingTarget
 
             requestVpnPermission()
@@ -114,17 +121,17 @@ class ConfigFragment : Fragment() {
         repository.loadLatestConfig { config ->
             if (config != null) {
                 sshDetailsInput.setText(config.sshDetails)
-                proxyHostInput.setText(config.proxyHost)
-                proxyPortInput.setText(config.proxyPort)
+                proxyInput.setText(config.proxyHost)   // saved as single string
                 payloadInput.setText(config.payload)
                 splitDelayInput.setText(config.splitDelay.toString())
+                dnsInput.setText(config.dnsServer ?: "1.1.1.1")
                 pingTargetInput.setText(config.pingTarget)
             } else {
                 sshDetailsInput.setText("premium.rickydewizard.site:80@Rickydewizard:apps")
-                proxyHostInput.setText("viton.com")
-                proxyPortInput.setText("80")
+                proxyInput.setText("viton.com:80")
                 payloadInput.setText("GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf][crlf]")
                 splitDelayInput.setText("500")
+                dnsInput.setText("1.1.1.1")
                 pingTargetInput.setText("1.1.1.1")
             }
         }
@@ -143,6 +150,20 @@ class ConfigFragment : Fragment() {
         val user = right.substring(0, colonRight)
         val pass = right.substring(colonRight + 1)
         return Quadruple(host, port, user, pass)
+    }
+
+    // Decodes Base64 proxy string, or falls back to plain "host:port"
+    private fun decodeProxy(encoded: String): Pair<String, String> {
+        return try {
+            val decoded = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT)
+            val decodedStr = String(decoded).trim()
+            val parts = decodedStr.split(":")
+            Pair(parts.getOrElse(0) { "" }, parts.getOrElse(1) { "" })
+        } catch (e: Exception) {
+            // Not Base64 – treat as plain host:port
+            val parts = encoded.split(":")
+            Pair(parts.getOrElse(0) { "" }, parts.getOrElse(1) { "" })
+        }
     }
 
     private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
@@ -178,6 +199,7 @@ class ConfigFragment : Fragment() {
         intent.putExtra("proxyPort", currentProxyPort)
         intent.putExtra("payload", currentPayload)
         intent.putExtra("splitDelay", currentSplitDelay)
+        intent.putExtra("dnsServer", currentDnsServer)   // NEW
         intent.putExtra("pingTarget", currentPingTarget)
         requireContext().startService(intent)
     }
