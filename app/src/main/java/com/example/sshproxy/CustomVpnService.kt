@@ -41,7 +41,7 @@ class CustomVpnService : VpnService() {
     private var reconnectAttempts = 0
     private var isReconnecting = false
 
-    // Config values
+    // Config
     private var sshHost: String = ""
     private var sshPort: String = ""
     private var sshUser: String = ""
@@ -93,6 +93,10 @@ class CustomVpnService : VpnService() {
             pingTimeout = it.getIntExtra("pingTimeout", 5000)
         }
 
+        // Debug: log what we received
+        LogManager.addLog("[DEBUG] Received sshHost='$sshHost', sshPort='$sshPort'")
+        LogManager.addLog("[DEBUG] Received proxyHost='$proxyHost', proxyPort='$proxyPort'")
+
         if (sshHost.isEmpty() || sshPort.isEmpty() || sshUser.isEmpty() || sshPass.isEmpty()) {
             Log.d(TAG, "Missing SSH details, stopping")
             stopSelf()
@@ -139,13 +143,29 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // Helper to follow redirects (3xx)
+    private fun handleRedirect(response: String, reader: BufferedReader): String? {
+        if (!response.contains("301") && !response.contains("302") &&
+            !response.contains("303") && !response.contains("307")) {
+            return null
+        }
+        var line: String?
+        while (reader.ready().also { line = reader.readLine() } && line != null) {
+            if (line!!.startsWith("Location:", ignoreCase = true)) {
+                val location = line!!.substringAfter(":").trim()
+                LogManager.addLog("[REDIRECT] Following to: $location")
+                return location
+            }
+        }
+        return null
+    }
+
     private fun connectToServer() {
         var attempt = 0
-        // If alwaysReconnect is true, run infinite loop; otherwise max 10 attempts
-        while (!isConnected && !isReconnecting) {
-            if (!alwaysReconnect && attempt >= 10) break
-            attempt++
+        val maxRetries = if (alwaysReconnect) Int.MAX_VALUE else 10
 
+        while (!isConnected && !isReconnecting && attempt < maxRetries) {
+            attempt++
             try {
                 val proxyString = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) "$proxyHost:$proxyPort" else ""
                 var processedPayload = PayloadProcessor.processPayload(
@@ -167,18 +187,11 @@ class CustomVpnService : VpnService() {
                     }
                 }
 
-                LogManager.addLog("verify all hostname")
-                LogManager.addLog("verify all hostname done")
-                LogManager.addLog("setup vpn")
-                LogManager.addLog("Preferred DNS $dnsServer")
-                LogManager.addLog("Alternate DNS 8.8.4.4")
-                LogManager.addLog("dns forwarding enable")
-
                 val proxyAddress = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) {
                     LogManager.addLog("Connecting via proxy: $proxyHost:$proxyPort")
                     proxyHost
                 } else {
-                    LogManager.addLog("Connecting directly to: $sshHost:$sshPort")
+                    LogManager.addLog("Connecting directly to: $sshHost:$sshPort (proxy NOT set)")
                     sshHost
                 }
                 val proxyPortNumber = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) {
@@ -193,7 +206,6 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("ssh connect via http proxy")
                 LogManager.addLog("Set timeout 15 sec")
 
-                // --- FIX: Socket with timeout ---
                 tunnelSocket = Socket()
                 tunnelSocket?.connect(InetSocketAddress(proxyAddress, proxyPortNumber), 15000)
                 tunnelSocket?.keepAlive = true
@@ -210,32 +222,38 @@ class CustomVpnService : VpnService() {
 
                 val reader = BufferedReader(InputStreamReader(tunnelSocket?.getInputStream()))
                 val responseLine = reader.readLine()
-                LogManager.addLog("HTTP/1.1 200 OK")
-                LogManager.addLog("HTTP/1.1 101 Switching Protocols")
+                LogManager.addLog("<<< Server response: $responseLine")
 
-                // Read first few lines
-                val fullResponse = StringBuilder()
-                var line: String? = responseLine
-                var count = 0
-                while (line != null && count < 5) {
-                    fullResponse.append(line).append("\n")
-                    line = reader.readLine()
-                    count++
-                }
-                if (fullResponse.isNotEmpty()) {
-                    LogManager.addLog("<<< Server response:\n$fullResponse")
+                // Handle redirects (301, 302, 303, 307)
+                if (responseLine != null && (responseLine.contains("301") || responseLine.contains("302") ||
+                        responseLine.contains("303") || responseLine.contains("307"))) {
+                    val newLocation = handleRedirect(responseLine, reader)
+                    if (newLocation != null) {
+                        try {
+                            val uri = java.net.URI(newLocation)
+                            val newHost = uri.host
+                            val newPort = if (uri.port != -1) uri.port else 80
+                            LogManager.addLog("[REDIRECT] Changing target to $newHost:$newPort")
+                            sshHost = newHost ?: sshHost
+                            sshPort = newPort.toString()
+                            tunnelSocket?.close()
+                            tunnelSocket = null
+                            continue // restart loop with new host
+                        } catch (e: Exception) {
+                            LogManager.addLog("[REDIRECT] Failed to parse location: ${e.message}")
+                        }
+                    }
                 }
 
-                if (responseLine != null && (responseLine.contains("200 OK") || responseLine.contains("101 Switching Protocols"))) {
-                    LogManager.addLog("set auto replace response")
-                    LogManager.addLog("HTTP/1.1 200 OK")
-                    LogManager.addLog("Establishing SSH...")
+                // Accept 200, 101, and any 2xx/3xx that aren't redirects
+                if (responseLine != null && (responseLine.contains("200") || responseLine.contains("101") ||
+                        responseLine.startsWith("HTTP/1.1 2") || responseLine.startsWith("HTTP/1.1 3"))) {
+                    LogManager.addLog("Server accepted connection. Establishing SSH...")
                     establishSSH()
                     reconnectAttempts = 0
                     return
                 } else {
-                    LogManager.addLog("[ERROR] Problem connecting to SSH")
-                    LogManager.addLog("Retrying with next host...")
+                    LogManager.addLog("[ERROR] Unexpected response: $responseLine. Retrying...")
                     PayloadProcessor.rotateIndex++
                     tunnelSocket?.close()
                     tunnelSocket = null
@@ -247,14 +265,13 @@ class CustomVpnService : VpnService() {
                 tunnelSocket?.close()
                 tunnelSocket = null
             } catch (e: Exception) {
-                LogManager.addLog("[ERROR] Problem connecting to SSH: ${e.message}")
+                LogManager.addLog("[ERROR] Problem connecting: ${e.message}")
                 LogManager.addLog("Retrying with next host...")
                 PayloadProcessor.rotateIndex++
                 tunnelSocket?.close()
                 tunnelSocket = null
             }
 
-            // If not alwaysReconnect and we've tried 10 times, break out
             if (!alwaysReconnect && attempt >= 10) break
             try { Thread.sleep(2000) } catch (_: InterruptedException) {}
         }
@@ -277,7 +294,6 @@ class CustomVpnService : VpnService() {
             sshSession?.setConfig("ServerAliveCountMax", "3")
             sshSession?.setConfig("TCPKeepAlive", "yes")
 
-            // Enable compression if requested
             if (enableCompression) {
                 sshSession?.setConfig("compression.s2c", "zlib@openssh.com")
                 sshSession?.setConfig("compression.c2s", "zlib@openssh.com")
@@ -375,12 +391,12 @@ class CustomVpnService : VpnService() {
             vpnInterface = Builder()
                 .addAddress("10.0.0.2", 32)
                 .addRoute("0.0.0.0", 0)
-                .addRoute("::", 0) // captures IPv6, prevents leaks
+                .addRoute("::", 0)
                 .addDnsServer(dnsServer)
                 .addDnsServer("8.8.8.8")
                 .setSession("HTTP Custom Clone")
                 .setBlocking(true)
-                .setMtu(mtu) // use user‑set MTU
+                .setMtu(mtu)
                 .establish()
 
             if (vpnInterface != null) {
@@ -456,7 +472,7 @@ class CustomVpnService : VpnService() {
                     }
                 } catch (e: Exception) {
                     LogManager.addLog("Ping timeout")
-                }
+                                    }
             }
         }
     }
@@ -511,10 +527,11 @@ class CustomVpnService : VpnService() {
         tunnelSocket = null
         vpnInterface?.close()
         vpnInterface = null
-        stopForeground(true)  // Clears notification
+        stopForeground(true)
         sendStatus("Disconnected")
         LogManager.addLog("VPN stopped")
         releaseWakeLock()
         Log.d(TAG, "onDestroy finished")
     }
 }
+          
