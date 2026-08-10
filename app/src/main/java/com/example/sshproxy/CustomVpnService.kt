@@ -27,9 +27,6 @@ class CustomVpnService : VpnService() {
         private const val TAG = "CustomVpnService"
     }
 
-    // ============================================================
-    // CLASS MEMBERS — DECLARED HERE
-    // ============================================================
     private var sshSession: Session? = null
     private var tunnelSocket: Socket? = null
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -37,7 +34,6 @@ class CustomVpnService : VpnService() {
     private var isConnected = false
     private var pingJob: Job? = null
 
-    // Config values
     private var sshHost: String = ""
     private var sshPort: String = ""
     private var sshUser: String = ""
@@ -211,7 +207,33 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("Key exchange algorithm: diffie-hellman-group14-sha1")
                 LogManager.addLog("Using algorithm: aes256-ctr hmac-sha2-256")
                 LogManager.addLog("ssh authenticate with password")
-                LogManager.addLog("Server Message: RICKYDEWIZARD PREMIUM SERVER")
+
+                // ============================================================
+                // DYNAMIC SERVER MESSAGE – READ AFTER AUTHENTICATION
+                // ============================================================
+                try {
+                    val input = tunnelSocket?.getInputStream()
+                    if (input != null) {
+                        val reader = BufferedReader(InputStreamReader(input))
+                        val messageBuilder = StringBuilder()
+                        while (reader.ready()) {
+                            val line = reader.readLine()
+                            if (line != null) {
+                                messageBuilder.append(line).append("\n")
+                            }
+                        }
+                        val msg = messageBuilder.toString().trim()
+                        if (msg.isNotEmpty()) {
+                            LogManager.addLog("Server Message: $msg")
+                        } else {
+                            LogManager.addLog("Server Message: (none)")
+                        }
+                    } else {
+                        LogManager.addLog("Server Message: (no input stream)")
+                    }
+                } catch (e: Exception) {
+                    LogManager.addLog("Server Message: (error reading)")
+                }
 
                 isConnected = true
                 showNotification("Connected ✓")
@@ -247,12 +269,12 @@ class CustomVpnService : VpnService() {
 
             vpnInterface = Builder()
                 .addAddress("10.0.0.2", 32)
-                .addRoute("0.0.0.0", 0)                      // IPv4
-                .addRoute("::", 0)                           // Block IPv6
+                .addRoute("0.0.0.0", 0)
+                .addRoute("::", 0)
                 .addDnsServer("1.1.1.1")
                 .addDnsServer("8.8.8.8")
                 .setSession("HTTP Custom Clone")
-                .setBlocking(true)                           // Force DNS through tunnel
+                .setBlocking(true)
                 .establish()
 
             if (vpnInterface != null) {
@@ -289,8 +311,6 @@ class CustomVpnService : VpnService() {
             }
 
             LogManager.addLog("HTTP Custom ready to use")
-
-            // Start ping (2 seconds like HTTP Custom)
             startPing()
 
             while (isConnected) {
@@ -309,7 +329,7 @@ class CustomVpnService : VpnService() {
     private fun startPing() {
         pingJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected) {
-                delay(2000) // 2 seconds like HTTP Custom
+                delay(2000)
                 try {
                     val startTime = System.currentTimeMillis()
                     val url = java.net.URL("http://1.1.1.1/cdn-cgi/trace")
