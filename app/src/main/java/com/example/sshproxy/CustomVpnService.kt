@@ -17,6 +17,7 @@ import com.jcraft.jsch.JSch
 import com.jcraft.jsch.Session
 import java.io.BufferedReader
 import java.io.InputStreamReader
+import java.net.InetSocketAddress
 import java.net.Socket
 import kotlinx.coroutines.*
 
@@ -29,7 +30,6 @@ class CustomVpnService : VpnService() {
         private const val WAKELOCK_TAG = "HttpCustom:WakeLock"
     }
 
-    // Members
     private var sshSession: Session? = null
     private var tunnelSocket: Socket? = null
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -41,7 +41,7 @@ class CustomVpnService : VpnService() {
     private var reconnectAttempts = 0
     private var isReconnecting = false
 
-    // Config
+    // Config values
     private var sshHost: String = ""
     private var sshPort: String = ""
     private var sshUser: String = ""
@@ -50,8 +50,16 @@ class CustomVpnService : VpnService() {
     private var proxyPort: String = ""
     private var payload: String = ""
     private var splitDelayMs: Int = 500
-    private var dnsServer: String = "1.1.1.1"   // NEW
+    private var dnsServer: String = "1.1.1.1"
     private var pingTarget: String = "1.1.1.1"
+    private var enableCompression: Boolean = true
+    private var alwaysReconnect: Boolean = false
+    private var mtu: Int = 1500
+    private var sendBuffer: Int = 16384
+    private var receiveBuffer: Int = 32768
+    private var pingUrl: String = "https://dns.google"
+    private var pingInterval: Int = 2000
+    private var pingTimeout: Int = 5000
 
     private val USE_TRAFFIC_ROUTER = true
 
@@ -75,6 +83,14 @@ class CustomVpnService : VpnService() {
             splitDelayMs = it.getIntExtra("splitDelay", 500)
             dnsServer = it.getStringExtra("dnsServer") ?: "1.1.1.1"
             pingTarget = it.getStringExtra("pingTarget") ?: "1.1.1.1"
+            enableCompression = it.getBooleanExtra("enableCompression", true)
+            alwaysReconnect = it.getBooleanExtra("alwaysReconnect", false)
+            mtu = it.getIntExtra("mtu", 1500)
+            sendBuffer = it.getIntExtra("sendBuffer", 16384)
+            receiveBuffer = it.getIntExtra("receiveBuffer", 32768)
+            pingUrl = it.getStringExtra("pingUrl") ?: "https://dns.google"
+            pingInterval = it.getIntExtra("pingInterval", 2000)
+            pingTimeout = it.getIntExtra("pingTimeout", 5000)
         }
 
         if (sshHost.isEmpty() || sshPort.isEmpty() || sshUser.isEmpty() || sshPass.isEmpty()) {
@@ -107,9 +123,6 @@ class CustomVpnService : VpnService() {
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
 
-    // ============================================================
-    // SPLIT PAYLOAD WITH CUSTOM DELAY
-    // ============================================================
     private fun sendPayloadWithSplit(payload: String, outputStream: java.io.OutputStream) {
         val parts = PayloadProcessor.splitPayload(payload)
         if (parts.size <= 1) {
@@ -128,11 +141,12 @@ class CustomVpnService : VpnService() {
 
     private fun connectToServer() {
         var attempt = 0
-        val maxRetries = 10
+        // If alwaysReconnect is true, run infinite loop; otherwise max 10 attempts
+        while (!isConnected && !isReconnecting) {
+            if (!alwaysReconnect && attempt >= 10) break
+            attempt++
 
-        while (attempt < maxRetries && !isConnected) {
             try {
-                // Build proxy string for PayloadProcessor
                 val proxyString = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) "$proxyHost:$proxyPort" else ""
                 var processedPayload = PayloadProcessor.processPayload(
                     payload,
@@ -142,7 +156,7 @@ class CustomVpnService : VpnService() {
                     "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36"
                 )
 
-                // ---- AUTO-INSERT [split] FOR WEBSOCKET PAYLOADS ----
+                // Auto‑insert [split] for WebSocket
                 if (processedPayload.contains("Upgrade: websocket", ignoreCase = true) && !processedPayload.contains("[split]")) {
                     val blankLineIndex = processedPayload.indexOf("\r\n\r\n")
                     if (blankLineIndex != -1) {
@@ -156,7 +170,7 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("verify all hostname")
                 LogManager.addLog("verify all hostname done")
                 LogManager.addLog("setup vpn")
-                LogManager.addLog("Preferred DNS ${dnsServer}")   // updated
+                LogManager.addLog("Preferred DNS $dnsServer")
                 LogManager.addLog("Alternate DNS 8.8.4.4")
                 LogManager.addLog("dns forwarding enable")
 
@@ -177,10 +191,13 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("begin to connecting server")
                 LogManager.addLog("enable ssh compression")
                 LogManager.addLog("ssh connect via http proxy")
-                LogManager.addLog("Set timeout 10 sec")
+                LogManager.addLog("Set timeout 15 sec")
 
-                tunnelSocket = Socket(proxyAddress, proxyPortNumber)
+                // --- FIX: Socket with timeout ---
+                tunnelSocket = Socket()
+                tunnelSocket?.connect(InetSocketAddress(proxyAddress, proxyPortNumber), 15000)
                 tunnelSocket?.keepAlive = true
+                tunnelSocket?.tcpNoDelay = true
 
                 val outputStream = tunnelSocket?.getOutputStream()
                 if (outputStream != null) {
@@ -196,7 +213,7 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("HTTP/1.1 200 OK")
                 LogManager.addLog("HTTP/1.1 101 Switching Protocols")
 
-                // Read only first few lines of server response
+                // Read first few lines
                 val fullResponse = StringBuilder()
                 var line: String? = responseLine
                 var count = 0
@@ -224,6 +241,11 @@ class CustomVpnService : VpnService() {
                     tunnelSocket = null
                 }
 
+            } catch (e: java.net.SocketTimeoutException) {
+                LogManager.addLog("[ERROR] Connection timeout (15s) – rotating host")
+                PayloadProcessor.rotateIndex++
+                tunnelSocket?.close()
+                tunnelSocket = null
             } catch (e: Exception) {
                 LogManager.addLog("[ERROR] Problem connecting to SSH: ${e.message}")
                 LogManager.addLog("Retrying with next host...")
@@ -232,7 +254,8 @@ class CustomVpnService : VpnService() {
                 tunnelSocket = null
             }
 
-            attempt++
+            // If not alwaysReconnect and we've tried 10 times, break out
+            if (!alwaysReconnect && attempt >= 10) break
             try { Thread.sleep(2000) } catch (_: InterruptedException) {}
         }
 
@@ -253,6 +276,13 @@ class CustomVpnService : VpnService() {
             sshSession?.setConfig("ServerAliveInterval", "10")
             sshSession?.setConfig("ServerAliveCountMax", "3")
             sshSession?.setConfig("TCPKeepAlive", "yes")
+
+            // Enable compression if requested
+            if (enableCompression) {
+                sshSession?.setConfig("compression.s2c", "zlib@openssh.com")
+                sshSession?.setConfig("compression.c2s", "zlib@openssh.com")
+                LogManager.addLog("SSH compression enabled (zlib)")
+            }
 
             sshSession?.setSocketFactory(object : com.jcraft.jsch.SocketFactory {
                 override fun createSocket(host: String?, port: Int): Socket {
@@ -277,22 +307,17 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("Using algorithm: aes256-ctr hmac-sha2-256")
                 LogManager.addLog("ssh authenticate with password")
 
-                // DO NOT read from input stream here – it would corrupt SSH handshake.
-                // The server response was already logged above.
-
                 isConnected = true
                 sendStatus("Connected")
                 showNotification("Connected ✓")
                 setupVpn()
                 startReconnectMonitor()
-
             } else {
                 LogManager.addLog("[ERROR] SSH connection failed")
                 showNotification("SSH failed")
                 sendStatus("Disconnected")
                 stopSelf()
             }
-
         } catch (e: Exception) {
             LogManager.addLog("[ERROR] SSH failed: ${e.message}")
             e.printStackTrace()
@@ -302,9 +327,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ============================================================
-    // AUTO-RECONNECTION
-    // ============================================================
     private fun startReconnectMonitor() {
         reconnectJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected) {
@@ -338,9 +360,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ============================================================
-    // VPN SETUP
-    // ============================================================
     private fun setupVpn() {
         try {
             if (tunnelSocket == null || tunnelSocket!!.isClosed || !tunnelSocket!!.isConnected) {
@@ -356,17 +375,17 @@ class CustomVpnService : VpnService() {
             vpnInterface = Builder()
                 .addAddress("10.0.0.2", 32)
                 .addRoute("0.0.0.0", 0)
-                .addRoute("::", 0)
-                .addDnsServer(dnsServer)            // use user-configured DNS
-                .addDnsServer("8.8.8.8")            // fallback
+                .addRoute("::", 0) // captures IPv6, prevents leaks
+                .addDnsServer(dnsServer)
+                .addDnsServer("8.8.8.8")
                 .setSession("HTTP Custom Clone")
                 .setBlocking(true)
-                .setMtu(1500)
+                .setMtu(mtu) // use user‑set MTU
                 .establish()
 
             if (vpnInterface != null) {
                 LogManager.addLog("Local IP: 10.0.0.2")
-                LogManager.addLog("VPN interface created (FD: ${vpnInterface?.fileDescriptor})")
+                LogManager.addLog("VPN interface created (MTU: $mtu)")
             } else {
                 LogManager.addLog("VPN interface is NULL!")
                 showNotification("VPN failed")
@@ -386,10 +405,12 @@ class CustomVpnService : VpnService() {
                         this,
                         vpnInterface!!.fileDescriptor,
                         tunnelSocket!!,
-                        dnsServer   // pass DNS to TrafficRouter
+                        dnsServer,
+                        sendBuffer,
+                        receiveBuffer
                     )
                     trafficRouter?.start()
-                    LogManager.addLog("Traffic router started (DNS: $dnsServer)")
+                    LogManager.addLog("Traffic router started (Send: $sendBuffer, Recv: $receiveBuffer)")
                 } else {
                     LogManager.addLog("[ERROR] Tunnel socket is closed before starting router")
                     showNotification("VPN setup failed")
@@ -415,19 +436,16 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ============================================================
-    // PING (with custom target – can be hostname or IP)
-    // ============================================================
     private fun startPing() {
         pingJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected) {
-                delay(2000)
+                delay(pingInterval.toLong())
                 try {
                     val startTime = System.currentTimeMillis()
-                    val url = java.net.URL("http://$pingTarget/cdn-cgi/trace")
+                    val url = java.net.URL(pingUrl)
                     val connection = url.openConnection() as java.net.HttpURLConnection
-                    connection.connectTimeout = 5000
-                    connection.readTimeout = 5000
+                    connection.connectTimeout = pingTimeout
+                    connection.readTimeout = pingTimeout
                     connection.requestMethod = "GET"
                     val responseCode = connection.responseCode
                     val elapsed = System.currentTimeMillis() - startTime
@@ -443,9 +461,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ============================================================
-    // NOTIFICATIONS
-    // ============================================================
     private fun showNotification(message: String) {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("HTTP Custom Clone")
@@ -463,9 +478,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ============================================================
-    // WAKELOCK
-    // ============================================================
     private fun acquireWakeLock() {
         try {
             wakeLock?.acquire(10 * 60 * 1000L)
@@ -499,7 +511,7 @@ class CustomVpnService : VpnService() {
         tunnelSocket = null
         vpnInterface?.close()
         vpnInterface = null
-        stopForeground(true)
+        stopForeground(true)  // Clears notification
         sendStatus("Disconnected")
         LogManager.addLog("VPN stopped")
         releaseWakeLock()
