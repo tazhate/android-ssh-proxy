@@ -11,6 +11,8 @@ import android.widget.EditText
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import kotlinx.coroutines.launch
 
 class ConfigFragment : Fragment() {
 
@@ -32,6 +34,8 @@ class ConfigFragment : Fragment() {
 
     private val VPN_REQUEST_CODE = 100
 
+    private lateinit var repository: ConfigRepository
+
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         val view = inflater.inflate(R.layout.fragment_config, container, false)
 
@@ -43,11 +47,10 @@ class ConfigFragment : Fragment() {
         disconnectButton = view.findViewById(R.id.disconnectButton)
         statusText = view.findViewById(R.id.statusText)
 
-        // Default values
-        sshDetailsInput.setText("premium.rickydewizard.site:80@Rickydewizard:apps")
-        proxyHostInput.setText("viton.com")
-        proxyPortInput.setText("80")
-        payloadInput.setText("GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf][crlf]")
+        repository = ConfigRepository(requireContext())
+
+        // Load saved config
+        loadSavedConfig()
 
         connectButton.setOnClickListener {
             val sshDetails = sshDetailsInput.text.toString().trim()
@@ -55,7 +58,6 @@ class ConfigFragment : Fragment() {
             val proxyPort = proxyPortInput.text.toString().trim()
             val payload = payloadInput.text.toString().trim()
 
-            // Parse SSH details
             val parseResult = parseSshDetails(sshDetails)
             if (parseResult == null) {
                 LogManager.addLog("[ERROR] Invalid SSH details format. Use host:port@username:password")
@@ -70,7 +72,9 @@ class ConfigFragment : Fragment() {
                 return@setOnClickListener
             }
 
-            // Clear logs and start connection
+            // Save config
+            repository.saveConfig(sshDetails, proxyHost, proxyPort, payload)
+
             LogManager.clearLogs()
             LogManager.addLog("[Config] SSH: $host:$port@$user")
             LogManager.addLog("[Config] Proxy: $proxyHost:$proxyPort")
@@ -100,32 +104,38 @@ class ConfigFragment : Fragment() {
         return view
     }
 
-    private fun parseSshDetails(input: String): Quadruple<String, String, String, String>? {
-        // Format: host:port@username:password
-        // If port is missing, default to 22
-        val atIndex = input.indexOf('@')
-        if (atIndex == -1) {
-            // No '@' – treat as host:port only? But we need username/password, so invalid.
-            return null
+    private fun loadSavedConfig() {
+        repository.loadLatestConfig { config ->
+            if (config != null) {
+                sshDetailsInput.setText(config.sshDetails)
+                proxyHostInput.setText(config.proxyHost)
+                proxyPortInput.setText(config.proxyPort)
+                payloadInput.setText(config.payload)
+            } else {
+                // Default values
+                sshDetailsInput.setText("premium.rickydewizard.site:80@Rickydewizard:apps")
+                proxyHostInput.setText("viton.com")
+                proxyPortInput.setText("80")
+                payloadInput.setText("GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf][crlf]")
+            }
         }
-        val left = input.substring(0, atIndex)   // host:port
-        val right = input.substring(atIndex + 1) // username:password
+    }
 
-        // Parse left side
+    private fun parseSshDetails(input: String): Quadruple<String, String, String, String>? {
+        val atIndex = input.indexOf('@')
+        if (atIndex == -1) return null
+        val left = input.substring(0, atIndex)
+        val right = input.substring(atIndex + 1)
         val colonLeft = left.indexOf(':')
         val host = if (colonLeft == -1) left else left.substring(0, colonLeft)
         val port = if (colonLeft == -1) "22" else left.substring(colonLeft + 1)
-
-        // Parse right side
         val colonRight = right.indexOf(':')
         if (colonRight == -1) return null
         val user = right.substring(0, colonRight)
         val pass = right.substring(colonRight + 1)
-
         return Quadruple(host, port, user, pass)
     }
 
-    // Helper data class for tuple
     private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
     private fun requestVpnPermission() {
