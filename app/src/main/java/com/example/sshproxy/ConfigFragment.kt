@@ -24,7 +24,7 @@ class ConfigFragment : Fragment() {
     private lateinit var payloadInput: EditText
     private lateinit var splitDelayInput: EditText
     private lateinit var dnsInput: EditText
-    private lateinit var pingTargetInput: EditText // kept but hidden
+    private lateinit var pingTargetInput: EditText
     private lateinit var enableCompressionCheck: CheckBox
     private lateinit var alwaysReconnectCheck: CheckBox
     private lateinit var mtuInput: EditText
@@ -68,14 +68,17 @@ class ConfigFragment : Fragment() {
                         toggleButton.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_red_dark))
                         updateStatus("Connected", android.R.color.holo_green_dark)
                     }
-                    "Disconnected", "Reconnecting..." -> {
-                        if (status == "Disconnected") {
-                            toggleButton.text = "Connect"
-                            toggleButton.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
-                            updateStatus("Disconnected", android.R.color.holo_red_dark)
-                        } else {
-                            updateStatus(status, android.R.color.holo_orange_dark)
-                        }
+                    "Disconnected" -> {
+                        toggleButton.text = "Connect"
+                        toggleButton.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
+                        updateStatus("Disconnected", android.R.color.holo_red_dark)
+                    }
+                    "Reconnecting..." -> {
+                        updateStatus("Reconnecting...", android.R.color.holo_orange_dark)
+                    }
+                    else -> {
+                        // Keep button as is
+                        updateStatus(status, android.R.color.holo_orange_dark)
                     }
                 }
             }
@@ -199,6 +202,7 @@ class ConfigFragment : Fragment() {
     private fun disconnectAction() {
         LogManager.addLog("[INFO] Disconnect button pressed")
         stopVpnService()
+        // Immediately reset button and status
         toggleButton.text = "Connect"
         toggleButton.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
         updateStatus("Disconnected", android.R.color.holo_red_dark)
