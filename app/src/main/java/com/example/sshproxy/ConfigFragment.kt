@@ -14,10 +14,7 @@ import androidx.fragment.app.Fragment
 
 class ConfigFragment : Fragment() {
 
-    private lateinit var sshHostInput: EditText
-    private lateinit var sshPortInput: EditText
-    private lateinit var sshUsernameInput: EditText
-    private lateinit var sshPasswordInput: EditText
+    private lateinit var sshDetailsInput: EditText
     private lateinit var proxyHostInput: EditText
     private lateinit var proxyPortInput: EditText
     private lateinit var payloadInput: EditText
@@ -38,10 +35,7 @@ class ConfigFragment : Fragment() {
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         val view = inflater.inflate(R.layout.fragment_config, container, false)
 
-        sshHostInput = view.findViewById(R.id.sshHostInput)
-        sshPortInput = view.findViewById(R.id.sshPortInput)
-        sshUsernameInput = view.findViewById(R.id.sshUsernameInput)
-        sshPasswordInput = view.findViewById(R.id.sshPasswordInput)
+        sshDetailsInput = view.findViewById(R.id.sshDetailsInput)
         proxyHostInput = view.findViewById(R.id.proxyHostInput)
         proxyPortInput = view.findViewById(R.id.proxyPortInput)
         payloadInput = view.findViewById(R.id.payloadInput)
@@ -50,42 +44,45 @@ class ConfigFragment : Fragment() {
         statusText = view.findViewById(R.id.statusText)
 
         // Default values
-        sshHostInput.setText("premium.rickydewizard.site")
-        sshPortInput.setText("80")
-        sshUsernameInput.setText("Rickydewizard")
-        sshPasswordInput.setText("apps")
+        sshDetailsInput.setText("premium.rickydewizard.site:80@Rickydewizard:apps")
         proxyHostInput.setText("viton.com")
         proxyPortInput.setText("80")
         payloadInput.setText("GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf][crlf]")
 
         connectButton.setOnClickListener {
-            val sshHost = sshHostInput.text.toString().trim()
-            val sshPort = sshPortInput.text.toString().trim()
-            val sshUser = sshUsernameInput.text.toString().trim()
-            val sshPass = sshPasswordInput.text.toString().trim()
+            val sshDetails = sshDetailsInput.text.toString().trim()
             val proxyHost = proxyHostInput.text.toString().trim()
             val proxyPort = proxyPortInput.text.toString().trim()
             val payload = payloadInput.text.toString().trim()
 
-            if (sshHost.isEmpty() || sshPort.isEmpty() || sshUser.isEmpty() || sshPass.isEmpty()) {
-                LogManager.addLog("[ERROR] Please fill in SSH details")
-                updateStatus("Error - Missing SSH details", android.R.color.holo_red_dark)
+            // Parse SSH details
+            val parseResult = parseSshDetails(sshDetails)
+            if (parseResult == null) {
+                LogManager.addLog("[ERROR] Invalid SSH details format. Use host:port@username:password")
+                updateStatus("Invalid SSH format", android.R.color.holo_red_dark)
                 return@setOnClickListener
             }
 
-            LogManager.clearLogs()
+            val (host, port, user, pass) = parseResult
+            if (host.isEmpty() || port.isEmpty() || user.isEmpty() || pass.isEmpty()) {
+                LogManager.addLog("[ERROR] SSH details incomplete")
+                updateStatus("Incomplete SSH details", android.R.color.holo_red_dark)
+                return@setOnClickListener
+            }
 
-            LogManager.addLog("[Config] SSH: $sshHost:$sshPort")
+            // Clear logs and start connection
+            LogManager.clearLogs()
+            LogManager.addLog("[Config] SSH: $host:$port@$user")
             LogManager.addLog("[Config] Proxy: $proxyHost:$proxyPort")
             LogManager.addLog("[Config] Payload: ${if (payload.length > 50) payload.substring(0, 50) + "..." else payload}")
             LogManager.addLog("[INFO] Connect button pressed")
 
             updateStatus("Requesting VPN permission...", android.R.color.holo_orange_dark)
 
-            currentSshHost = sshHost
-            currentSshPort = sshPort
-            currentSshUser = sshUser
-            currentSshPass = sshPass
+            currentSshHost = host
+            currentSshPort = port
+            currentSshUser = user
+            currentSshPass = pass
             currentProxyHost = proxyHost
             currentProxyPort = proxyPort
             currentPayload = payload
@@ -102,6 +99,34 @@ class ConfigFragment : Fragment() {
 
         return view
     }
+
+    private fun parseSshDetails(input: String): Quadruple<String, String, String, String>? {
+        // Format: host:port@username:password
+        // If port is missing, default to 22
+        val atIndex = input.indexOf('@')
+        if (atIndex == -1) {
+            // No '@' – treat as host:port only? But we need username/password, so invalid.
+            return null
+        }
+        val left = input.substring(0, atIndex)   // host:port
+        val right = input.substring(atIndex + 1) // username:password
+
+        // Parse left side
+        val colonLeft = left.indexOf(':')
+        val host = if (colonLeft == -1) left else left.substring(0, colonLeft)
+        val port = if (colonLeft == -1) "22" else left.substring(colonLeft + 1)
+
+        // Parse right side
+        val colonRight = right.indexOf(':')
+        if (colonRight == -1) return null
+        val user = right.substring(0, colonRight)
+        val pass = right.substring(colonRight + 1)
+
+        return Quadruple(host, port, user, pass)
+    }
+
+    // Helper data class for tuple
+    private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
     private fun requestVpnPermission() {
         val intent = VpnService.prepare(requireContext())
