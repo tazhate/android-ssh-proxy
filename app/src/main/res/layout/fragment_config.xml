@@ -20,57 +20,26 @@
             android:layout_marginBottom="16dp"
             android:textColor="#2196F3" />
 
-        <!-- SSH Configuration -->
+        <!-- SSH Details (single line: host:port@username:password) -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="SSH Configuration"
+            android:text="SSH Details"
             android:textStyle="bold"
             android:textSize="14sp"
             android:textColor="#666666"
             android:layout_marginTop="8dp" />
 
         <EditText
-            android:id="@+id/sshHostInput"
+            android:id="@+id/sshDetailsInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="SSH Host"
-            android:text="premium.rickydewizard.site"
+            android:hint="host:port@username:password"
+            android:text="premium.rickydewizard.site:80@Rickydewizard:apps"
+            android:inputType="text"
             android:padding="12dp"
             android:background="@android:drawable/editbox_background"
             android:layout_marginTop="4dp" />
-
-        <EditText
-            android:id="@+id/sshPortInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="SSH Port"
-            android:inputType="number"
-            android:text="80"
-            android:padding="12dp"
-            android:background="@android:drawable/editbox_background"
-            android:layout_marginTop="8dp" />
-
-        <EditText
-            android:id="@+id/sshUsernameInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="SSH Username"
-            android:text="Rickydewizard"
-            android:padding="12dp"
-            android:background="@android:drawable/editbox_background"
-            android:layout_marginTop="8dp" />
-
-        <EditText
-            android:id="@+id/sshPasswordInput"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:hint="SSH Password"
-            android:inputType="textPassword"
-            android:text="apps"
-            android:padding="12dp"
-            android:background="@android:drawable/editbox_background"
-            android:layout_marginTop="8dp" />
 
         <!-- Remote Proxy -->
         <TextView
