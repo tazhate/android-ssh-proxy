@@ -42,7 +42,6 @@ class CustomVpnService : VpnService() {
     private var proxyPort: String = ""
     private var payload: String = ""
 
-    // Set to true to enable traffic routing
     private val USE_TRAFFIC_ROUTER = true
 
     override fun onCreate() {
@@ -130,7 +129,7 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("Set timeout 10 sec")
 
                 tunnelSocket = Socket(proxyAddress, proxyPortNumber)
-                tunnelSocket?.keepAlive = true  // Keep socket alive
+                tunnelSocket?.keepAlive = true
 
                 tunnelSocket?.getOutputStream()?.write(processedPayload.toByteArray())
                 tunnelSocket?.getOutputStream()?.flush()
@@ -182,7 +181,7 @@ class CustomVpnService : VpnService() {
             sshSession = jsch.getSession(sshUser, sshHost, sshPort.toInt())
             sshSession?.setPassword(sshPass)
             sshSession?.setConfig("StrictHostKeyChecking", "no")
-            sshSession?.setConfig("ServerAliveInterval", "30")
+            sshSession?.setConfig("ServerAliveInterval", "10")   // SSH keep‑alive every 10s
             sshSession?.setConfig("ServerAliveCountMax", "3")
             sshSession?.setConfig("TCPKeepAlive", "yes")
 
@@ -252,10 +251,8 @@ class CustomVpnService : VpnService() {
 
             if (vpnInterface != null) {
                 LogManager.addLog("VPN interface created (FD: ${vpnInterface?.fileDescriptor})")
-                Log.d(TAG, "VPN interface created successfully")
             } else {
                 LogManager.addLog("VPN interface is NULL!")
-                Log.d(TAG, "VPN interface is NULL!")
                 showNotification("VPN failed")
                 sendStatus("Disconnected")
                 stopSelf()
@@ -267,24 +264,17 @@ class CustomVpnService : VpnService() {
             LogManager.addLog("ssh connected")
             LogManager.addLog("set UDPGW 127.0.0.1:7300")
 
-            // Start Traffic Router
-            LogManager.addLog("Checking USE_TRAFFIC_ROUTER = $USE_TRAFFIC_ROUTER")
             if (USE_TRAFFIC_ROUTER) {
-                LogManager.addLog("Traffic router enabled. Creating...")
                 if (tunnelSocket != null && vpnInterface != null && !tunnelSocket!!.isClosed) {
-                    LogManager.addLog("Creating TrafficRouter instance...")
                     trafficRouter = TrafficRouter(
                         this,
                         vpnInterface!!.fileDescriptor,
                         tunnelSocket!!
                     )
-                    LogManager.addLog("TrafficRouter instance created, calling start()...")
                     trafficRouter?.start()
-                    LogManager.addLog("Traffic router start() called successfully")
-                    Log.d(TAG, "Traffic router started")
+                    LogManager.addLog("Traffic router started")
                 } else {
-                    LogManager.addLog("[ERROR] Tunnel socket is closed or null before starting router")
-                    Log.d(TAG, "ERROR: Tunnel socket is closed")
+                    LogManager.addLog("[ERROR] Tunnel socket is closed before starting router")
                     showNotification("VPN setup failed")
                     sendStatus("Disconnected")
                     stopSelf()
@@ -292,7 +282,6 @@ class CustomVpnService : VpnService() {
                 }
             } else {
                 LogManager.addLog("Traffic router disabled (testing mode)")
-                Log.d(TAG, "Traffic router disabled")
             }
 
             LogManager.addLog("HTTP Custom ready to use")
@@ -304,7 +293,6 @@ class CustomVpnService : VpnService() {
 
         } catch (e: Exception) {
             LogManager.addLog("[ERROR] VPN setup failed: ${e.message}")
-            Log.d(TAG, "VPN setup failed", e)
             e.printStackTrace()
             showNotification("VPN failed")
             sendStatus("Disconnected")
@@ -327,10 +315,8 @@ class CustomVpnService : VpnService() {
                     val elapsed = System.currentTimeMillis() - startTime
                     if (responseCode == 200 || responseCode == 204) {
                         LogManager.addLog("Ping 204 No Content (${elapsed}ms)")
-                    } else if (elapsed > 5000) {
-                        LogManager.addLog("Ping timeout")
                     } else {
-                        LogManager.addLog("Ping failed: $responseCode")
+                        LogManager.addLog("Ping timeout")
                     }
                 } catch (e: Exception) {
                     LogManager.addLog("Ping timeout")
@@ -362,15 +348,13 @@ class CustomVpnService : VpnService() {
         pingJob?.cancel()
         trafficRouter?.stop()
         trafficRouter = null
-        // Wait a moment for TrafficRouter to close things
-        try { Thread.sleep(200) } catch (_: InterruptedException) {}
         sshSession?.disconnect()
         sshSession = null
         tunnelSocket?.close()
         tunnelSocket = null
         vpnInterface?.close()
         vpnInterface = null
-        stopForeground(true)
+        stopForeground(true)   // removes the VPN key
         sendStatus("Disconnected")
         LogManager.addLog("VPN stopped")
         Log.d(TAG, "onDestroy finished")
