@@ -5,12 +5,12 @@ import androidx.room.PrimaryKey
 
 @Entity(tableName = "config_table")
 data class ConfigEntity(
-    @PrimaryKey(autoGenerate = true) val id: Int = 0,
-    val sshDetails: String,
-    val proxyHost: String,
-    val proxyPort: String,
+    @PrimaryKey(autoGenerate = true)
+    val id: Int = 0,
+    val sshDetails: String,          // host:port@user:pass
+    val proxyInput: String,          // single field (host:port or Base64)
     val payload: String,
-    val splitDelay: Int = 500,
-    val pingTarget: String = "1.1.1.1",
-    val timestamp: Long = System.currentTimeMillis()
+    val splitDelay: Int,
+    val dnsServer: String,           // NEW
+    val pingTarget: String
 )
