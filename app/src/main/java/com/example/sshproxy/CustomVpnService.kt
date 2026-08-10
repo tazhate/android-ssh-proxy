@@ -30,18 +30,19 @@ class CustomVpnService : VpnService() {
         private const val WAKELOCK_TAG = "HttpCustom:WakeLock"
     }
 
-    // ============================================================
-    // CLASS MEMBERS
-    // ============================================================
+    // Members
     private var sshSession: Session? = null
     private var tunnelSocket: Socket? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private var trafficRouter: TrafficRouter? = null
     private var isConnected = false
     private var pingJob: Job? = null
+    private var reconnectJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
+    private var reconnectAttempts = 0
+    private var isReconnecting = false
 
-    // Config values
+    // Config
     private var sshHost: String = ""
     private var sshPort: String = ""
     private var sshUser: String = ""
@@ -55,10 +56,8 @@ class CustomVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "SERVICE CREATED")
-        // Initialize WakeLock
         val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
         wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKELOCK_TAG)
-        // Acquire a partial wake lock to keep CPU awake during VPN (will be released on destroy)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -86,8 +85,9 @@ class CustomVpnService : VpnService() {
         LogManager.addLog("starting service")
         LogManager.addLog("ssh starting")
 
-        // Acquire WakeLock
         acquireWakeLock()
+        isReconnecting = false
+        reconnectAttempts = 0
 
         Thread {
             connectToServer()
@@ -102,9 +102,29 @@ class CustomVpnService : VpnService() {
         LocalBroadcastManager.getInstance(this).sendBroadcast(intent)
     }
 
+    // ============================================================
+    // SPLIT PAYLOAD SUPPORT
+    // ============================================================
+    private fun sendPayloadWithSplit(payload: String, outputStream: java.io.OutputStream) {
+        val parts = PayloadProcessor.splitPayload(payload)
+        if (parts.size <= 1) {
+            // No split, send as one
+            outputStream.write(payload.toByteArray())
+            outputStream.flush()
+            return
+        }
+        for ((index, part) in parts.withIndex()) {
+            outputStream.write(part.toByteArray())
+            outputStream.flush()
+            if (index < parts.size - 1) {
+                Thread.sleep(500) // 500ms delay between parts
+            }
+        }
+    }
+
     private fun connectToServer() {
-        val maxRetries = 10
         var attempt = 0
+        val maxRetries = 10
 
         while (attempt < maxRetries && !isConnected) {
             try {
@@ -145,12 +165,15 @@ class CustomVpnService : VpnService() {
                 tunnelSocket = Socket(proxyAddress, proxyPortNumber)
                 tunnelSocket?.keepAlive = true
 
+                // ---------- SEND PAYLOAD WITH SPLIT SUPPORT ----------
                 LogManager.addLog(">>> Sending payload (${processedPayload.length} chars):")
                 LogManager.addLog(processedPayload)
                 LogManager.addLog(">>> End of payload")
 
-                tunnelSocket?.getOutputStream()?.write(processedPayload.toByteArray())
-                tunnelSocket?.getOutputStream()?.flush()
+                val outputStream = tunnelSocket?.getOutputStream()
+                if (outputStream != null) {
+                    sendPayloadWithSplit(processedPayload, outputStream)
+                }
                 LogManager.addLog("sending payload")
                 LogManager.addLog("connected to socket $proxyAddress:$proxyPortNumber")
 
@@ -174,6 +197,8 @@ class CustomVpnService : VpnService() {
                     LogManager.addLog("HTTP/1.1 200 OK")
                     LogManager.addLog("Establishing SSH...")
                     establishSSH()
+                    // Success: reset reconnect attempts
+                    reconnectAttempts = 0
                     return
                 } else {
                     LogManager.addLog("[ERROR] Problem connecting to SSH")
@@ -261,9 +286,13 @@ class CustomVpnService : VpnService() {
                 }
 
                 isConnected = true
-                showNotification("Connected ✓")
                 sendStatus("Connected")
+                showNotification("Connected ✓")
                 setupVpn()
+
+                // Start auto-reconnect monitor
+                startReconnectMonitor()
+
             } else {
                 LogManager.addLog("[ERROR] SSH connection failed")
                 showNotification("SSH failed")
@@ -277,6 +306,48 @@ class CustomVpnService : VpnService() {
             showNotification("SSH failed")
             sendStatus("Disconnected")
             stopSelf()
+        }
+    }
+
+    // ============================================================
+    // AUTO-RECONNECTION LOGIC
+    // ============================================================
+    private fun startReconnectMonitor() {
+        reconnectJob = CoroutineScope(Dispatchers.IO).launch {
+            while (isConnected) {
+                delay(1000)
+                // Check if the socket is still open
+                if (tunnelSocket == null || tunnelSocket!!.isClosed || !tunnelSocket!!.isConnected) {
+                    LogManager.addLog("[WARN] Connection lost. Attempting to reconnect...")
+                    isReconnecting = true
+                    sendStatus("Reconnecting...")
+                    showNotification("Reconnecting...")
+                    // Exponential backoff
+                    reconnectAttempts++
+                    val delay = if (reconnectAttempts > 10) 30 else (1 shl reconnectAttempts).coerceAtMost(60)
+                    LogManager.addLog("Reconnect attempt $reconnectAttempts in ${delay}s")
+                    delay(delay * 1000L)
+                    // Reconnect
+                    try {
+                        // Clean up old resources
+                        trafficRouter?.stop()
+                        trafficRouter = null
+                        sshSession?.disconnect()
+                        sshSession = null
+                        tunnelSocket?.close()
+                        tunnelSocket = null
+                        vpnInterface?.close()
+                        vpnInterface = null
+                        // Reset connection state
+                        isConnected = false
+                        // Reconnect
+                        connectToServer()
+                    } catch (e: Exception) {
+                        LogManager.addLog("[ERROR] Reconnection failed: ${e.message}")
+                    }
+                    isReconnecting = false
+                }
+            }
         }
     }
 
@@ -304,6 +375,8 @@ class CustomVpnService : VpnService() {
                 .establish()
 
             if (vpnInterface != null) {
+                // Log the local IP address (10.0.0.2)
+                LogManager.addLog("Local IP: 10.0.0.2")
                 LogManager.addLog("VPN interface created (FD: ${vpnInterface?.fileDescriptor})")
             } else {
                 LogManager.addLog("VPN interface is NULL!")
@@ -394,12 +467,9 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ============================================================
-    // WAKELOCK METHODS
-    // ============================================================
     private fun acquireWakeLock() {
         try {
-            wakeLock?.acquire(10 * 60 * 1000L) // 10 minutes timeout (renewed automatically)
+            wakeLock?.acquire(10 * 60 * 1000L)
             LogManager.addLog("WakeLock acquire")
         } catch (e: Exception) {
             LogManager.addLog("[ERROR] WakeLock acquire failed: ${e.message}")
@@ -421,6 +491,7 @@ class CustomVpnService : VpnService() {
         super.onDestroy()
         isConnected = false
         pingJob?.cancel()
+        reconnectJob?.cancel()
         trafficRouter?.stop()
         trafficRouter = null
         sshSession?.disconnect()
