@@ -1,0 +1,168 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp"
+    android:background="#F5F5F5">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="HTTP Custom Clone"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginBottom="16dp"
+            android:textColor="#2196F3" />
+
+        <!-- SSH Configuration -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="SSH Configuration"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/sshHostInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="SSH Host"
+            android:text="premium.rickydewizard.site"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="4dp" />
+
+        <EditText
+            android:id="@+id/sshPortInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="SSH Port"
+            android:inputType="number"
+            android:text="80"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/sshUsernameInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="SSH Username"
+            android:text="Rickydewizard"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/sshPasswordInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="SSH Password"
+            android:inputType="textPassword"
+            android:text="apps"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="8dp" />
+
+        <!-- Remote Proxy -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Remote Proxy (Squid)"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="16dp" />
+
+        <EditText
+            android:id="@+id/proxyHostInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Proxy Host"
+            android:text="viton.com"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="4dp" />
+
+        <EditText
+            android:id="@+id/proxyPortInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Proxy Port"
+            android:inputType="number"
+            android:text="80"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="8dp" />
+
+        <!-- Payload -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Custom Payload"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="16dp" />
+
+        <EditText
+            android:id="@+id/payloadInput"
+            android:layout_width="match_parent"
+            android:layout_height="120dp"
+            android:hint="GET / HTTP/1.1[crlf]Host: [host][crlf]..."
+            android:inputType="textMultiLine"
+            android:gravity="top"
+            android:text="GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf][crlf]"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="4dp" />
+
+        <!-- Buttons -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="16dp">
+
+            <Button
+                android:id="@+id/connectButton"
+                android:layout_width="0dp"
+                android:layout_height="56dp"
+                android:layout_weight="1"
+                android:layout_marginEnd="8dp"
+                android:text="Connect"
+                android:backgroundTint="#4CAF50"
+                android:textColor="#FFFFFF" />
+
+            <Button
+                android:id="@+id/disconnectButton"
+                android:layout_width="0dp"
+                android:layout_height="56dp"
+                android:layout_weight="1"
+                android:text="Disconnect"
+                android:backgroundTint="#f44336"
+                android:textColor="#FFFFFF"
+                android:enabled="false" />
+        </LinearLayout>
+
+        <!-- Status -->
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Status: Disconnected"
+            android:gravity="center"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp" />
+
+    </LinearLayout>
+</ScrollView>
