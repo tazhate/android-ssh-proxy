@@ -30,7 +30,7 @@ class CustomVpnService : VpnService() {
         private const val WAKELOCK_TAG = "HttpCustom:WakeLock"
     }
 
-    // Members
+    // Class members
     private var sshSession: Session? = null
     private var tunnelSocket: Socket? = null
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -42,7 +42,7 @@ class CustomVpnService : VpnService() {
     private var reconnectAttempts = 0
     private var isReconnecting = false
 
-    // Config
+    // Config values
     private var sshHost: String = ""
     private var sshPort: String = ""
     private var sshUser: String = ""
@@ -50,6 +50,8 @@ class CustomVpnService : VpnService() {
     private var proxyHost: String = ""
     private var proxyPort: String = ""
     private var payload: String = ""
+    private var splitDelayMs: Int = 500
+    private var pingTarget: String = "1.1.1.1"
 
     private val USE_TRAFFIC_ROUTER = true
 
@@ -70,6 +72,8 @@ class CustomVpnService : VpnService() {
             proxyHost = it.getStringExtra("proxyHost") ?: ""
             proxyPort = it.getStringExtra("proxyPort") ?: ""
             payload = it.getStringExtra("payload") ?: ""
+            splitDelayMs = it.getIntExtra("splitDelay", 500)
+            pingTarget = it.getStringExtra("pingTarget") ?: "1.1.1.1"
         }
 
         if (sshHost.isEmpty() || sshPort.isEmpty() || sshUser.isEmpty() || sshPass.isEmpty()) {
@@ -103,12 +107,11 @@ class CustomVpnService : VpnService() {
     }
 
     // ============================================================
-    // SPLIT PAYLOAD SUPPORT
+    // SPLIT PAYLOAD WITH CUSTOM DELAY
     // ============================================================
     private fun sendPayloadWithSplit(payload: String, outputStream: java.io.OutputStream) {
         val parts = PayloadProcessor.splitPayload(payload)
         if (parts.size <= 1) {
-            // No split, send as one
             outputStream.write(payload.toByteArray())
             outputStream.flush()
             return
@@ -116,8 +119,8 @@ class CustomVpnService : VpnService() {
         for ((index, part) in parts.withIndex()) {
             outputStream.write(part.toByteArray())
             outputStream.flush()
-            if (index < parts.size - 1) {
-                Thread.sleep(500) // 500ms delay between parts
+            if (index < parts.size - 1 && splitDelayMs > 0) {
+                Thread.sleep(splitDelayMs.toLong())
             }
         }
     }
@@ -165,11 +168,6 @@ class CustomVpnService : VpnService() {
                 tunnelSocket = Socket(proxyAddress, proxyPortNumber)
                 tunnelSocket?.keepAlive = true
 
-                // ---------- SEND PAYLOAD WITH SPLIT SUPPORT ----------
-                LogManager.addLog(">>> Sending payload (${processedPayload.length} chars):")
-                LogManager.addLog(processedPayload)
-                LogManager.addLog(">>> End of payload")
-
                 val outputStream = tunnelSocket?.getOutputStream()
                 if (outputStream != null) {
                     sendPayloadWithSplit(processedPayload, outputStream)
@@ -197,7 +195,6 @@ class CustomVpnService : VpnService() {
                     LogManager.addLog("HTTP/1.1 200 OK")
                     LogManager.addLog("Establishing SSH...")
                     establishSSH()
-                    // Success: reset reconnect attempts
                     reconnectAttempts = 0
                     return
                 } else {
@@ -289,8 +286,6 @@ class CustomVpnService : VpnService() {
                 sendStatus("Connected")
                 showNotification("Connected ✓")
                 setupVpn()
-
-                // Start auto-reconnect monitor
                 startReconnectMonitor()
 
             } else {
@@ -310,26 +305,22 @@ class CustomVpnService : VpnService() {
     }
 
     // ============================================================
-    // AUTO-RECONNECTION LOGIC
+    // AUTO-RECONNECTION
     // ============================================================
     private fun startReconnectMonitor() {
         reconnectJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected) {
                 delay(1000)
-                // Check if the socket is still open
                 if (tunnelSocket == null || tunnelSocket!!.isClosed || !tunnelSocket!!.isConnected) {
                     LogManager.addLog("[WARN] Connection lost. Attempting to reconnect...")
                     isReconnecting = true
                     sendStatus("Reconnecting...")
                     showNotification("Reconnecting...")
-                    // Exponential backoff
                     reconnectAttempts++
                     val delay = if (reconnectAttempts > 10) 30 else (1 shl reconnectAttempts).coerceAtMost(60)
                     LogManager.addLog("Reconnect attempt $reconnectAttempts in ${delay}s")
                     delay(delay * 1000L)
-                    // Reconnect
                     try {
-                        // Clean up old resources
                         trafficRouter?.stop()
                         trafficRouter = null
                         sshSession?.disconnect()
@@ -338,9 +329,7 @@ class CustomVpnService : VpnService() {
                         tunnelSocket = null
                         vpnInterface?.close()
                         vpnInterface = null
-                        // Reset connection state
                         isConnected = false
-                        // Reconnect
                         connectToServer()
                     } catch (e: Exception) {
                         LogManager.addLog("[ERROR] Reconnection failed: ${e.message}")
@@ -351,6 +340,9 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // ============================================================
+    // VPN SETUP
+    // ============================================================
     private fun setupVpn() {
         try {
             if (tunnelSocket == null || tunnelSocket!!.isClosed || !tunnelSocket!!.isConnected) {
@@ -375,7 +367,6 @@ class CustomVpnService : VpnService() {
                 .establish()
 
             if (vpnInterface != null) {
-                // Log the local IP address (10.0.0.2)
                 LogManager.addLog("Local IP: 10.0.0.2")
                 LogManager.addLog("VPN interface created (FD: ${vpnInterface?.fileDescriptor})")
             } else {
@@ -425,13 +416,16 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // ============================================================
+    // PING (with custom target)
+    // ============================================================
     private fun startPing() {
         pingJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected) {
                 delay(2000)
                 try {
                     val startTime = System.currentTimeMillis()
-                    val url = java.net.URL("http://1.1.1.1/cdn-cgi/trace")
+                    val url = java.net.URL("http://$pingTarget/cdn-cgi/trace")
                     val connection = url.openConnection() as java.net.HttpURLConnection
                     connection.connectTimeout = 5000
                     connection.readTimeout = 5000
@@ -450,6 +444,9 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // ============================================================
+    // NOTIFICATIONS
+    // ============================================================
     private fun showNotification(message: String) {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("HTTP Custom Clone")
@@ -467,6 +464,9 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // ============================================================
+    // WAKELOCK
+    // ============================================================
     private fun acquireWakeLock() {
         try {
             wakeLock?.acquire(10 * 60 * 1000L)
