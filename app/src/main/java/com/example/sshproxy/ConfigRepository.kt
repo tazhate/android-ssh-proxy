@@ -11,14 +11,21 @@ class ConfigRepository(private val context: android.content.Context) {
     private val database = ConfigDatabase.getDatabase(context)
     private val dao = database.configDao()
 
-    // 6 parameters to match the new entity
     fun saveConfig(
         sshDetails: String,
         proxyInput: String,
         payload: String,
         splitDelay: Int,
         dnsServer: String,
-        pingTarget: String
+        pingTarget: String,
+        enableCompression: Boolean,
+        mtu: Int,
+        sendBuffer: Int,
+        receiveBuffer: Int,
+        pingUrl: String,
+        pingInterval: Int,
+        pingTimeout: Int,
+        alwaysReconnect: Boolean
     ) {
         CoroutineScope(Dispatchers.IO).launch {
             val entity = ConfigEntity(
@@ -27,7 +34,15 @@ class ConfigRepository(private val context: android.content.Context) {
                 payload = payload,
                 splitDelay = splitDelay,
                 dnsServer = dnsServer,
-                pingTarget = pingTarget
+                pingTarget = pingTarget,
+                enableCompression = enableCompression,
+                mtu = mtu,
+                sendBuffer = sendBuffer,
+                receiveBuffer = receiveBuffer,
+                pingUrl = pingUrl,
+                pingInterval = pingInterval,
+                pingTimeout = pingTimeout,
+                alwaysReconnect = alwaysReconnect
             )
             dao.insert(entity)
         }
