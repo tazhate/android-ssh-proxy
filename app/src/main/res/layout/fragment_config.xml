@@ -10,6 +10,7 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
+        <!-- App Title -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -90,6 +91,54 @@
             android:inputType="textMultiLine"
             android:gravity="top"
             android:text="GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf][crlf]"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="4dp" />
+
+        <!-- Split Delay -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Split Delay (ms)"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="16dp" />
+
+        <EditText
+            android:id="@+id/splitDelayInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="0 = no delay"
+            android:inputType="number"
+            android:text="500"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="4dp" />
+
+        <!-- Ping Target -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ping Target"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="16dp" />
+
+        <Spinner
+            android:id="@+id/pingTargetSpinner"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp" />
+
+        <EditText
+            android:id="@+id/pingTargetCustomInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Enter custom host (e.g. google.com)"
+            android:inputType="textUri"
+            android:visibility="gone"
             android:padding="12dp"
             android:background="@android:drawable/editbox_background"
             android:layout_marginTop="4dp" />
