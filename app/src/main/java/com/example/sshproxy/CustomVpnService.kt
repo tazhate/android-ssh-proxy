@@ -3,10 +3,12 @@ package com.example.sshproxy
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.Context
 import android.content.Intent
 import android.net.VpnService
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.PowerManager
 import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
@@ -25,10 +27,11 @@ class CustomVpnService : VpnService() {
         private const val CHANNEL_ID = "vpn_channel"
         private const val NOTIFICATION_ID = 1
         private const val TAG = "CustomVpnService"
+        private const val WAKELOCK_TAG = "HttpCustom:WakeLock"
     }
 
     // ============================================================
-    // CLASS MEMBERS — DECLARED HERE
+    // CLASS MEMBERS
     // ============================================================
     private var sshSession: Session? = null
     private var tunnelSocket: Socket? = null
@@ -36,6 +39,7 @@ class CustomVpnService : VpnService() {
     private var trafficRouter: TrafficRouter? = null
     private var isConnected = false
     private var pingJob: Job? = null
+    private var wakeLock: PowerManager.WakeLock? = null
 
     // Config values
     private var sshHost: String = ""
@@ -51,6 +55,10 @@ class CustomVpnService : VpnService() {
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "SERVICE CREATED")
+        // Initialize WakeLock
+        val powerManager = getSystemService(Context.POWER_SERVICE) as PowerManager
+        wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, WAKELOCK_TAG)
+        // Acquire a partial wake lock to keep CPU awake during VPN (will be released on destroy)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -77,7 +85,9 @@ class CustomVpnService : VpnService() {
         LogManager.addLog("resolving proxy hostname")
         LogManager.addLog("starting service")
         LogManager.addLog("ssh starting")
-        LogManager.addLog("WakeLock acquire")
+
+        // Acquire WakeLock
+        acquireWakeLock()
 
         Thread {
             connectToServer()
@@ -135,7 +145,6 @@ class CustomVpnService : VpnService() {
                 tunnelSocket = Socket(proxyAddress, proxyPortNumber)
                 tunnelSocket?.keepAlive = true
 
-                // Log the payload being sent
                 LogManager.addLog(">>> Sending payload (${processedPayload.length} chars):")
                 LogManager.addLog(processedPayload)
                 LogManager.addLog(">>> End of payload")
@@ -145,7 +154,6 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("sending payload")
                 LogManager.addLog("connected to socket $proxyAddress:$proxyPortNumber")
 
-                // Small delay to let the proxy process
                 Thread.sleep(500)
 
                 val reader = BufferedReader(InputStreamReader(tunnelSocket?.getInputStream()))
@@ -153,7 +161,6 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("HTTP/1.1 200 OK")
                 LogManager.addLog("HTTP/1.1 101 Switching Protocols")
 
-                // Read full response
                 val fullResponse = StringBuilder()
                 while (reader.ready()) {
                     fullResponse.append(reader.readLine()).append("\n")
@@ -229,7 +236,6 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("Using algorithm: aes256-ctr hmac-sha2-256")
                 LogManager.addLog("ssh authenticate with password")
 
-                // Read dynamic server message
                 try {
                     val input = tunnelSocket?.getInputStream()
                     if (input != null) {
@@ -388,6 +394,29 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // ============================================================
+    // WAKELOCK METHODS
+    // ============================================================
+    private fun acquireWakeLock() {
+        try {
+            wakeLock?.acquire(10 * 60 * 1000L) // 10 minutes timeout (renewed automatically)
+            LogManager.addLog("WakeLock acquire")
+        } catch (e: Exception) {
+            LogManager.addLog("[ERROR] WakeLock acquire failed: ${e.message}")
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) {
+                wakeLock?.release()
+                LogManager.addLog("WakeLock release")
+            }
+        } catch (e: Exception) {
+            LogManager.addLog("[ERROR] WakeLock release failed: ${e.message}")
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
         isConnected = false
@@ -403,6 +432,7 @@ class CustomVpnService : VpnService() {
         stopForeground(true)
         sendStatus("Disconnected")
         LogManager.addLog("VPN stopped")
+        releaseWakeLock()
         Log.d(TAG, "onDestroy finished")
     }
 }
