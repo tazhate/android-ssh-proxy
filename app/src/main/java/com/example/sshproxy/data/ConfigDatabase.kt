@@ -7,7 +7,7 @@ import android.content.Context
 
 @Database(
     entities = [ConfigEntity::class],
-    version = 2,  // increment from 1 to 2
+    version = 2,
     exportSchema = false
 )
 abstract class ConfigDatabase : RoomDatabase() {
@@ -23,9 +23,7 @@ abstract class ConfigDatabase : RoomDatabase() {
                     context.applicationContext,
                     ConfigDatabase::class.java,
                     "config_database"
-                )
-                .fallbackToDestructiveMigration() // clears old data – safe for dev
-                .build()
+                ).fallbackToDestructiveMigration().build()
                 INSTANCE = instance
                 instance
             }
