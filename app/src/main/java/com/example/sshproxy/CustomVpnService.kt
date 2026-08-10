@@ -1,6 +1,5 @@
 package com.example.sshproxy
 
-import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -30,7 +29,7 @@ class CustomVpnService : VpnService() {
         private const val WAKELOCK_TAG = "HttpCustom:WakeLock"
     }
 
-    // Class members
+    // Members
     private var sshSession: Session? = null
     private var tunnelSocket: Socket? = null
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -42,7 +41,7 @@ class CustomVpnService : VpnService() {
     private var reconnectAttempts = 0
     private var isReconnecting = false
 
-    // Config values
+    // Config
     private var sshHost: String = ""
     private var sshPort: String = ""
     private var sshUser: String = ""
@@ -51,6 +50,7 @@ class CustomVpnService : VpnService() {
     private var proxyPort: String = ""
     private var payload: String = ""
     private var splitDelayMs: Int = 500
+    private var dnsServer: String = "1.1.1.1"   // NEW
     private var pingTarget: String = "1.1.1.1"
 
     private val USE_TRAFFIC_ROUTER = true
@@ -73,6 +73,7 @@ class CustomVpnService : VpnService() {
             proxyPort = it.getStringExtra("proxyPort") ?: ""
             payload = it.getStringExtra("payload") ?: ""
             splitDelayMs = it.getIntExtra("splitDelay", 500)
+            dnsServer = it.getStringExtra("dnsServer") ?: "1.1.1.1"
             pingTarget = it.getStringExtra("pingTarget") ?: "1.1.1.1"
         }
 
@@ -131,18 +132,31 @@ class CustomVpnService : VpnService() {
 
         while (attempt < maxRetries && !isConnected) {
             try {
-                val processedPayload = PayloadProcessor.processPayload(
+                // Build proxy string for PayloadProcessor
+                val proxyString = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) "$proxyHost:$proxyPort" else ""
+                var processedPayload = PayloadProcessor.processPayload(
                     payload,
                     sshHost,
                     sshPort,
-                    if (proxyHost.isNotEmpty()) "$proxyHost:$proxyPort" else "",
+                    proxyString,
                     "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36"
                 )
+
+                // ---- AUTO-INSERT [split] FOR WEBSOCKET PAYLOADS ----
+                if (processedPayload.contains("Upgrade: websocket", ignoreCase = true) && !processedPayload.contains("[split]")) {
+                    val blankLineIndex = processedPayload.indexOf("\r\n\r\n")
+                    if (blankLineIndex != -1) {
+                        val before = processedPayload.substring(0, blankLineIndex + 4)
+                        val after = processedPayload.substring(blankLineIndex + 4)
+                        processedPayload = before + "[split]" + after
+                        LogManager.addLog("[AUTO] Inserted [split] for WebSocket upgrade.")
+                    }
+                }
 
                 LogManager.addLog("verify all hostname")
                 LogManager.addLog("verify all hostname done")
                 LogManager.addLog("setup vpn")
-                LogManager.addLog("Preferred DNS 1.1.1.1")
+                LogManager.addLog("Preferred DNS ${dnsServer}")   // updated
                 LogManager.addLog("Alternate DNS 8.8.4.4")
                 LogManager.addLog("dns forwarding enable")
 
@@ -182,12 +196,17 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("HTTP/1.1 200 OK")
                 LogManager.addLog("HTTP/1.1 101 Switching Protocols")
 
+                // Read only first few lines of server response
                 val fullResponse = StringBuilder()
-                while (reader.ready()) {
-                    fullResponse.append(reader.readLine()).append("\n")
+                var line: String? = responseLine
+                var count = 0
+                while (line != null && count < 5) {
+                    fullResponse.append(line).append("\n")
+                    line = reader.readLine()
+                    count++
                 }
                 if (fullResponse.isNotEmpty()) {
-                    LogManager.addLog("<<< Full response:\n$fullResponse")
+                    LogManager.addLog("<<< Server response:\n$fullResponse")
                 }
 
                 if (responseLine != null && (responseLine.contains("200 OK") || responseLine.contains("101 Switching Protocols"))) {
@@ -258,29 +277,8 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("Using algorithm: aes256-ctr hmac-sha2-256")
                 LogManager.addLog("ssh authenticate with password")
 
-                try {
-                    val input = tunnelSocket?.getInputStream()
-                    if (input != null) {
-                        val reader = BufferedReader(InputStreamReader(input))
-                        val messageBuilder = StringBuilder()
-                        while (reader.ready()) {
-                            val line = reader.readLine()
-                            if (line != null) {
-                                messageBuilder.append(line).append("\n")
-                            }
-                        }
-                        val msg = messageBuilder.toString().trim()
-                        if (msg.isNotEmpty()) {
-                            LogManager.addLog("Server Message: $msg")
-                        } else {
-                            LogManager.addLog("Server Message: (none)")
-                        }
-                    } else {
-                        LogManager.addLog("Server Message: (no input stream)")
-                    }
-                } catch (e: Exception) {
-                    LogManager.addLog("Server Message: (error reading)")
-                }
+                // DO NOT read from input stream here – it would corrupt SSH handshake.
+                // The server response was already logged above.
 
                 isConnected = true
                 sendStatus("Connected")
@@ -359,8 +357,8 @@ class CustomVpnService : VpnService() {
                 .addAddress("10.0.0.2", 32)
                 .addRoute("0.0.0.0", 0)
                 .addRoute("::", 0)
-                .addDnsServer("1.1.1.1")
-                .addDnsServer("8.8.8.8")
+                .addDnsServer(dnsServer)            // use user-configured DNS
+                .addDnsServer("8.8.8.8")            // fallback
                 .setSession("HTTP Custom Clone")
                 .setBlocking(true)
                 .setMtu(1500)
@@ -387,10 +385,11 @@ class CustomVpnService : VpnService() {
                     trafficRouter = TrafficRouter(
                         this,
                         vpnInterface!!.fileDescriptor,
-                        tunnelSocket!!
+                        tunnelSocket!!,
+                        dnsServer   // pass DNS to TrafficRouter
                     )
                     trafficRouter?.start()
-                    LogManager.addLog("Traffic router started")
+                    LogManager.addLog("Traffic router started (DNS: $dnsServer)")
                 } else {
                     LogManager.addLog("[ERROR] Tunnel socket is closed before starting router")
                     showNotification("VPN setup failed")
@@ -417,7 +416,7 @@ class CustomVpnService : VpnService() {
     }
 
     // ============================================================
-    // PING (with custom target)
+    // PING (with custom target – can be hostname or IP)
     // ============================================================
     private fun startPing() {
         pingJob = CoroutineScope(Dispatchers.IO).launch {
@@ -435,7 +434,7 @@ class CustomVpnService : VpnService() {
                     if (responseCode == 200 || responseCode == 204) {
                         LogManager.addLog("Ping 204 No Content (${elapsed}ms)")
                     } else {
-                        LogManager.addLog("Ping timeout")
+                        LogManager.addLog("Ping timeout (code $responseCode)")
                     }
                 } catch (e: Exception) {
                     LogManager.addLog("Ping timeout")
