@@ -10,5 +10,7 @@ data class ConfigEntity(
     val proxyHost: String,
     val proxyPort: String,
     val payload: String,
+    val splitDelay: Int = 500,
+    val pingTarget: String = "1.1.1.1",
     val timestamp: Long = System.currentTimeMillis()
 )
