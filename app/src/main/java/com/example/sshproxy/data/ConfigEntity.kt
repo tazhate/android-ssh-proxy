@@ -11,6 +11,6 @@ data class ConfigEntity(
     val proxyInput: String,          // single field (host:port or Base64)
     val payload: String,
     val splitDelay: Int,
-    val dnsServer: String,           // NEW
+    val dnsServer: String,           // new
     val pingTarget: String
 )
