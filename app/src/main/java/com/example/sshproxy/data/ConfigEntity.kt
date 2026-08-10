@@ -7,10 +7,19 @@ import androidx.room.PrimaryKey
 data class ConfigEntity(
     @PrimaryKey(autoGenerate = true)
     val id: Int = 0,
-    val sshDetails: String,          // host:port@user:pass
-    val proxyInput: String,          // single field (host:port or Base64)
+    val sshDetails: String,
+    val proxyInput: String,
     val payload: String,
     val splitDelay: Int,
-    val dnsServer: String,           // new
-    val pingTarget: String
+    val dnsServer: String,
+    val pingTarget: String, // kept for compatibility – will be replaced by pingUrl
+    // New fields
+    val enableCompression: Boolean = true,
+    val mtu: Int = 1500,
+    val sendBuffer: Int = 16384,
+    val receiveBuffer: Int = 32768,
+    val pingUrl: String = "https://dns.google",
+    val pingInterval: Int = 2000,
+    val pingTimeout: Int = 5000,
+    val alwaysReconnect: Boolean = false
 )
