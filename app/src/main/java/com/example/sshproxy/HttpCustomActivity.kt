@@ -27,7 +27,7 @@ class HttpCustomActivity : AppCompatActivity() {
             }
             val configFragment = supportFragmentManager.findFragmentByTag("f0") as? ConfigFragment
             configFragment?.updateStatus(status, color)
-            configFragment?.setDisconnectEnabled(status == "Connected")
+            // No need to set disconnect button state – it's a single toggle managed by ConfigFragment itself
         }
     }
 
