@@ -27,6 +27,7 @@ class CustomVpnService : VpnService() {
         private const val TAG = "CustomVpnService"
     }
 
+    // Service state
     private var sshSession: Session? = null
     private var tunnelSocket: Socket? = null
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -34,6 +35,7 @@ class CustomVpnService : VpnService() {
     private var isConnected = false
     private var pingJob: Job? = null
 
+    // Config values
     private var sshHost: String = ""
     private var sshPort: String = ""
     private var sshUser: String = ""
@@ -255,6 +257,9 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // ============================================================
+    // VPN SETUP WITH DNS LEAK PREVENTION
+    // ============================================================
     private fun setupVpn() {
         try {
             if (tunnelSocket == null || tunnelSocket!!.isClosed || !tunnelSocket!!.isConnected) {
@@ -268,13 +273,14 @@ class CustomVpnService : VpnService() {
             tunnelSocket?.keepAlive = true
 
             vpnInterface = Builder()
-                .addAddress("10.0.0.2", 32)
-                .addRoute("0.0.0.0", 0)
-                .addRoute("::", 0)
-                .addDnsServer("1.1.1.1")
-                .addDnsServer("8.8.8.8")
+                .addAddress("10.0.0.2", 32)           // IPv4 address
+                .addRoute("0.0.0.0", 0)                // IPv4 – route all traffic
+                .addRoute("::", 0)                     // IPv6 – block all IPv6 traffic (leak prevention)
+                .addDnsServer("1.1.1.1")               // Cloudflare DNS
+                .addDnsServer("8.8.8.8")               // Google DNS
                 .setSession("HTTP Custom Clone")
-                .setBlocking(true)
+                .setBlocking(true)                     // Force all traffic through VPN, drop any outside
+                .setMtu(1500)                          // Set MTU to avoid fragmentation
                 .establish()
 
             if (vpnInterface != null) {
@@ -311,6 +317,8 @@ class CustomVpnService : VpnService() {
             }
 
             LogManager.addLog("HTTP Custom ready to use")
+
+            // Start ping (2 seconds interval)
             startPing()
 
             while (isConnected) {
@@ -329,7 +337,7 @@ class CustomVpnService : VpnService() {
     private fun startPing() {
         pingJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected) {
-                delay(2000)
+                delay(2000) // 2 seconds like HTTP Custom
                 try {
                     val startTime = System.currentTimeMillis()
                     val url = java.net.URL("http://1.1.1.1/cdn-cgi/trace")
@@ -380,7 +388,7 @@ class CustomVpnService : VpnService() {
         tunnelSocket = null
         vpnInterface?.close()
         vpnInterface = null
-        stopForeground(true)
+        stopForeground(true)   // removes VPN key
         sendStatus("Disconnected")
         LogManager.addLog("VPN stopped")
         Log.d(TAG, "onDestroy finished")
