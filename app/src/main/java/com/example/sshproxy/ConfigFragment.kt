@@ -6,13 +6,14 @@ import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Spinner
 import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
 
 class ConfigFragment : Fragment() {
 
@@ -20,6 +21,9 @@ class ConfigFragment : Fragment() {
     private lateinit var proxyHostInput: EditText
     private lateinit var proxyPortInput: EditText
     private lateinit var payloadInput: EditText
+    private lateinit var splitDelayInput: EditText
+    private lateinit var pingTargetSpinner: Spinner
+    private lateinit var pingTargetCustomInput: EditText
     private lateinit var connectButton: Button
     private lateinit var disconnectButton: Button
     private lateinit var statusText: TextView
@@ -31,9 +35,10 @@ class ConfigFragment : Fragment() {
     private var currentProxyHost: String = ""
     private var currentProxyPort: String = ""
     private var currentPayload: String = ""
+    private var currentSplitDelay: Int = 500
+    private var currentPingTarget: String = "1.1.1.1"
 
     private val VPN_REQUEST_CODE = 100
-
     private lateinit var repository: ConfigRepository
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
@@ -43,9 +48,15 @@ class ConfigFragment : Fragment() {
         proxyHostInput = view.findViewById(R.id.proxyHostInput)
         proxyPortInput = view.findViewById(R.id.proxyPortInput)
         payloadInput = view.findViewById(R.id.payloadInput)
+        splitDelayInput = view.findViewById(R.id.splitDelayInput)
+        pingTargetSpinner = view.findViewById(R.id.pingTargetSpinner)
+        pingTargetCustomInput = view.findViewById(R.id.pingTargetCustomInput)
         connectButton = view.findViewById(R.id.connectButton)
         disconnectButton = view.findViewById(R.id.disconnectButton)
         statusText = view.findViewById(R.id.statusText)
+
+        // Setup ping target spinner
+        setupPingTargetSpinner()
 
         repository = ConfigRepository(requireContext())
 
@@ -57,6 +68,14 @@ class ConfigFragment : Fragment() {
             val proxyHost = proxyHostInput.text.toString().trim()
             val proxyPort = proxyPortInput.text.toString().trim()
             val payload = payloadInput.text.toString().trim()
+            val splitDelay = splitDelayInput.text.toString().toIntOrNull() ?: 500
+
+            // Determine ping target
+            val pingTarget = if (pingTargetSpinner.selectedItem.toString() == "Custom") {
+                pingTargetCustomInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.1.1.1"
+            } else {
+                pingTargetSpinner.selectedItem.toString()
+            }
 
             val parseResult = parseSshDetails(sshDetails)
             if (parseResult == null) {
@@ -73,11 +92,13 @@ class ConfigFragment : Fragment() {
             }
 
             // Save config
-            repository.saveConfig(sshDetails, proxyHost, proxyPort, payload)
+            repository.saveConfig(sshDetails, proxyHost, proxyPort, payload, splitDelay, pingTarget)
 
             LogManager.clearLogs()
             LogManager.addLog("[Config] SSH: $host:$port@$user")
             LogManager.addLog("[Config] Proxy: $proxyHost:$proxyPort")
+            LogManager.addLog("[Config] Split Delay: ${splitDelay}ms")
+            LogManager.addLog("[Config] Ping Target: $pingTarget")
             LogManager.addLog("[Config] Payload: ${if (payload.length > 50) payload.substring(0, 50) + "..." else payload}")
             LogManager.addLog("[INFO] Connect button pressed")
 
@@ -90,6 +111,8 @@ class ConfigFragment : Fragment() {
             currentProxyHost = proxyHost
             currentProxyPort = proxyPort
             currentPayload = payload
+            currentSplitDelay = splitDelay
+            currentPingTarget = pingTarget
 
             requestVpnPermission()
         }
@@ -104,6 +127,21 @@ class ConfigFragment : Fragment() {
         return view
     }
 
+    private fun setupPingTargetSpinner() {
+        val options = listOf("1.1.1.1", "8.8.8.8", "google.com", "Custom")
+        val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, options)
+        adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        pingTargetSpinner.adapter = adapter
+
+        pingTargetSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
+                val selected = options[position]
+                pingTargetCustomInput.visibility = if (selected == "Custom") View.VISIBLE else View.GONE
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+    }
+
     private fun loadSavedConfig() {
         repository.loadLatestConfig { config ->
             if (config != null) {
@@ -111,12 +149,31 @@ class ConfigFragment : Fragment() {
                 proxyHostInput.setText(config.proxyHost)
                 proxyPortInput.setText(config.proxyPort)
                 payloadInput.setText(config.payload)
+                splitDelayInput.setText(config.splitDelay.toString())
+                // Ping target: try to select in spinner
+                val options = listOf("1.1.1.1", "8.8.8.8", "google.com", "Custom")
+                val index = options.indexOfFirst { it.equals(config.pingTarget, ignoreCase = true) }
+                if (index >= 0) {
+                    pingTargetSpinner.setSelection(index)
+                    if (index == 3) {
+                        pingTargetCustomInput.setText(config.pingTarget)
+                        pingTargetCustomInput.visibility = View.VISIBLE
+                    }
+                } else {
+                    // Custom ping not in list
+                    pingTargetSpinner.setSelection(3)
+                    pingTargetCustomInput.setText(config.pingTarget)
+                    pingTargetCustomInput.visibility = View.VISIBLE
+                }
             } else {
-                // Default values
+                // Defaults
                 sshDetailsInput.setText("premium.rickydewizard.site:80@Rickydewizard:apps")
                 proxyHostInput.setText("viton.com")
                 proxyPortInput.setText("80")
                 payloadInput.setText("GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf][crlf]")
+                splitDelayInput.setText("500")
+                pingTargetSpinner.setSelection(0)
+                pingTargetCustomInput.visibility = View.GONE
             }
         }
     }
@@ -168,6 +225,8 @@ class ConfigFragment : Fragment() {
         intent.putExtra("proxyHost", currentProxyHost)
         intent.putExtra("proxyPort", currentProxyPort)
         intent.putExtra("payload", currentPayload)
+        intent.putExtra("splitDelay", currentSplitDelay)
+        intent.putExtra("pingTarget", currentPingTarget)
         requireContext().startService(intent)
     }
 
