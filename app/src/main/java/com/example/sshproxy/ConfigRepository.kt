@@ -11,10 +11,10 @@ class ConfigRepository(private val context: android.content.Context) {
     private val database = ConfigDatabase.getDatabase(context)
     private val dao = database.configDao()
 
-    // Updated to match new entity fields
+    // 6 parameters to match the new entity
     fun saveConfig(
         sshDetails: String,
-        proxyInput: String,      // single field
+        proxyInput: String,
         payload: String,
         splitDelay: Int,
         dnsServer: String,
