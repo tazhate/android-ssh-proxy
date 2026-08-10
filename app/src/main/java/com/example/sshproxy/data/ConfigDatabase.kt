@@ -24,7 +24,7 @@ abstract class ConfigDatabase : RoomDatabase() {
                     ConfigDatabase::class.java,
                     "config_database"
                 )
-                .fallbackToDestructiveMigration() // simple upgrade (will clear data)
+                .fallbackToDestructiveMigration() // clears old data – safe for dev
                 .build()
                 INSTANCE = instance
                 instance
