@@ -27,7 +27,7 @@ class ConfigFragment : Fragment() {
     private lateinit var pingTargetInput: EditText
     private lateinit var enableCompressionCheck: CheckBox
     private lateinit var alwaysReconnectCheck: CheckBox
-    private lateinit var followRedirectsCheck: CheckBox   // NEW
+    private lateinit var followRedirectsCheck: CheckBox
     private lateinit var mtuInput: EditText
     private lateinit var sendBufferInput: EditText
     private lateinit var receiveBufferInput: EditText
@@ -97,7 +97,7 @@ class ConfigFragment : Fragment() {
         pingTargetInput = view.findViewById(R.id.pingTargetInput)
         enableCompressionCheck = view.findViewById(R.id.enableCompressionCheck)
         alwaysReconnectCheck = view.findViewById(R.id.alwaysReconnectCheck)
-        followRedirectsCheck = view.findViewById(R.id.followRedirectsCheck)   // NEW
+        followRedirectsCheck = view.findViewById(R.id.followRedirectsCheck)
         mtuInput = view.findViewById(R.id.mtuInput)
         sendBufferInput = view.findViewById(R.id.sendBufferInput)
         receiveBufferInput = view.findViewById(R.id.receiveBufferInput)
@@ -156,7 +156,6 @@ class ConfigFragment : Fragment() {
 
         val (proxyHost, proxyPort) = decodeProxy(proxyString)
 
-        // Save config (now with followRedirects)
         repository.saveConfig(
             sshDetails, proxyString, payload, splitDelay, dnsServer, pingTarget,
             enableCompression, mtu, sendBuffer, receiveBuffer, pingUrl, pingInterval, pingTimeout,
