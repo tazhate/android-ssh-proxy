@@ -96,10 +96,6 @@ class CustomVpnService : VpnService() {
             pingTimeout = it.getIntExtra("pingTimeout", 5000)
         }
 
-        // DEBUG: Log what we received
-        LogManager.addLog("[DEBUG] Received sshHost='$sshHost', sshPort='$sshPort'")
-        LogManager.addLog("[DEBUG] Received proxyHost='$proxyHost', proxyPort='$proxyPort'")
-
         if (sshHost.isEmpty() || sshPort.isEmpty() || sshUser.isEmpty() || sshPass.isEmpty()) {
             Log.d(TAG, "Missing SSH details, stopping")
             stopSelf()
@@ -162,13 +158,25 @@ class CustomVpnService : VpnService() {
         return null
     }
 
+    // ---------- NEW: drain HTTP headers before SSH ----------
+    private fun drainHttpHeaders(reader: BufferedReader) {
+        var line: String?
+        while (reader.ready().also { line = reader.readLine() } && line != null) {
+            if (line!!.isEmpty()) {
+                // End of HTTP headers
+                break
+            }
+        }
+    }
+
+    // ---------- MAIN CONNECTION LOOP ----------
     private fun connectToServer() {
         var attempt = 0
         val maxRetries = if (alwaysReconnect) Int.MAX_VALUE else 10
+        var compressionFailed = false
 
         while (!isConnected && !isReconnecting && attempt < maxRetries) {
             attempt++
-            var compressionRetry = false // flag to retry without compression
             try {
                 val proxyString = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) "$proxyHost:$proxyPort" else ""
                 var processedPayload = PayloadProcessor.processPayload(
@@ -193,7 +201,7 @@ class CustomVpnService : VpnService() {
                     LogManager.addLog("Connecting via proxy: $proxyHost:$proxyPort")
                     proxyHost
                 } else {
-                    LogManager.addLog("Connecting directly to: $sshHost:$sshPort (proxy NOT set)")
+                    LogManager.addLog("Connecting directly to: $sshHost:$sshPort")
                     sshHost
                 }
                 val proxyPortNumber = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) {
@@ -206,13 +214,13 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("begin to connecting server")
                 LogManager.addLog("enable ssh compression")
                 LogManager.addLog("ssh connect via http proxy")
-                LogManager.addLog("Set timeout 15 sec")
+                LogManager.addLog("Set timeout 25 sec")
 
-                // Always create a fresh socket for each attempt
+                // Clean socket
                 tunnelSocket?.close()
                 tunnelSocket = null
                 tunnelSocket = Socket()
-                tunnelSocket?.connect(InetSocketAddress(proxyAddress, proxyPortNumber), 15000)
+                tunnelSocket?.connect(InetSocketAddress(proxyAddress, proxyPortNumber), 25000)
                 tunnelSocket?.keepAlive = true
                 tunnelSocket?.tcpNoDelay = true
 
@@ -244,22 +252,38 @@ class CustomVpnService : VpnService() {
                             sshPort = newPort.toString()
                             tunnelSocket?.close()
                             tunnelSocket = null
-                            continue // restart loop with new host
+                            continue
                         } catch (e: Exception) {
                             LogManager.addLog("[REDIRECT] Failed to parse location: ${e.message}")
                         }
                     }
                 }
 
-                // Accept 200, 101, and any 2xx/3xx (except redirects)
+                // Accept 200, 101, 400, 403, 2xx, and (if not following) 3xx
                 if (responseLine != null &&
                     (responseLine.contains("200") || responseLine.contains("101") ||
+                     responseLine.contains("400") || responseLine.contains("403") ||
                      responseLine.startsWith("HTTP/1.1 2") ||
                      (responseLine.startsWith("HTTP/1.1 3") && !followRedirects))) {
-                    LogManager.addLog("Server accepted connection. Establishing SSH...")
-                    establishSSH(compressionRetry) // pass the retry flag
-                    reconnectAttempts = 0
-                    return
+                    LogManager.addLog("Server accepted connection. Draining HTTP headers...")
+                    drainHttpHeaders(reader)   // <-- CRITICAL FIX
+                    LogManager.addLog("Establishing SSH...")
+                    try {
+                        establishSSH(compressionFailed)
+                        reconnectAttempts = 0
+                        return
+                    } catch (e: JSchException) {
+                        if (e.message?.contains("Algorithm negotiation") == true && !compressionFailed) {
+                            LogManager.addLog("[ERROR] Compression not supported. Disabling and retrying on same host...")
+                            compressionFailed = true
+                            enableCompression = false
+                            tunnelSocket?.close()
+                            tunnelSocket = null
+                            continue
+                        } else {
+                            throw e // rethrow to outer catch
+                        }
+                    }
                 } else {
                     LogManager.addLog("[ERROR] Unexpected response: $responseLine. Retrying...")
                     PayloadProcessor.rotateIndex++
@@ -268,20 +292,23 @@ class CustomVpnService : VpnService() {
                 }
 
             } catch (e: java.net.SocketTimeoutException) {
-                LogManager.addLog("[ERROR] Connection timeout (15s) – rotating host")
+                LogManager.addLog("[ERROR] Connection timeout (25s) – rotating host")
                 PayloadProcessor.rotateIndex++
                 tunnelSocket?.close()
                 tunnelSocket = null
             } catch (e: JSchException) {
-                // Specific SSH errors
-                if (e.message?.contains("Algorithm negotiation") == true && enableCompression) {
-                    // Server doesn't support compression – retry without it
-                    LogManager.addLog("[ERROR] Compression not supported. Disabling and retrying...")
-                    enableCompression = false
-                    compressionRetry = true
+                // Catch SSH errors from establishSSH (including timeouts)
+                if (e.cause is java.net.SocketTimeoutException || e.message?.contains("timeout") == true) {
+                    LogManager.addLog("[ERROR] SSH handshake timeout – rotating host")
+                    PayloadProcessor.rotateIndex++
                     tunnelSocket?.close()
                     tunnelSocket = null
-                    // Do NOT increment rotateIndex – stay on same host
+                } else if (e.message?.contains("Algorithm negotiation") == true && !compressionFailed) {
+                    LogManager.addLog("[ERROR] Compression not supported. Disabling and retrying on same host...")
+                    compressionFailed = true
+                    enableCompression = false
+                    tunnelSocket?.close()
+                    tunnelSocket = null
                     continue
                 } else {
                     LogManager.addLog("[ERROR] SSH failed: ${e.message}")
@@ -308,8 +335,15 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // ---------- SSH ESTABLISHMENT ----------
     private fun establishSSH(compressionRetry: Boolean = false) {
         try {
+            // Add a delay before SSH handshake if splitDelayMs > 0
+            if (splitDelayMs > 0) {
+                LogManager.addLog("Waiting ${splitDelayMs}ms before SSH handshake...")
+                Thread.sleep(splitDelayMs.toLong())
+            }
+
             val jsch = JSch()
             sshSession = jsch.getSession(sshUser, sshHost, sshPort.toInt())
             sshSession?.setPassword(sshPass)
@@ -318,7 +352,6 @@ class CustomVpnService : VpnService() {
             sshSession?.setConfig("ServerAliveCountMax", "3")
             sshSession?.setConfig("TCPKeepAlive", "yes")
 
-            // Only enable compression if the flag is true and this is not a retry
             if (enableCompression && !compressionRetry) {
                 sshSession?.setConfig("compression.s2c", "zlib@openssh.com")
                 sshSession?.setConfig("compression.c2s", "zlib@openssh.com")
@@ -341,7 +374,8 @@ class CustomVpnService : VpnService() {
                 }
             })
 
-            sshSession?.connect(15000)
+            // Increased timeout to 25s
+            sshSession?.connect(25000)
 
             if (sshSession?.isConnected == true) {
                 LogManager.addLog("SSH-2.0-dropbear_2019.78")
@@ -363,10 +397,8 @@ class CustomVpnService : VpnService() {
             }
         } catch (e: JSchException) {
             if (e.message?.contains("Algorithm negotiation") == true && enableCompression) {
-                // Compression failed – trigger retry without compression
                 LogManager.addLog("[ERROR] Compression not supported. Disabling and retrying...")
                 enableCompression = false
-                // The outer connectToServer will retry on the same host
                 throw e // rethrow to be caught in connectToServer
             } else {
                 LogManager.addLog("[ERROR] SSH failed: ${e.message}")
@@ -384,6 +416,7 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // ---------- RECONNECT MONITOR ----------
     private fun startReconnectMonitor() {
         reconnectJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected) {
@@ -417,6 +450,7 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // ---------- VPN SETUP ----------
     private fun setupVpn() {
         try {
             if (tunnelSocket == null || tunnelSocket!!.isClosed || !tunnelSocket!!.isConnected) {
@@ -460,7 +494,7 @@ class CustomVpnService : VpnService() {
                 if (tunnelSocket != null && vpnInterface != null && !tunnelSocket!!.isClosed) {
                     trafficRouter = TrafficRouter(
                         this,
-                                                vpnInterface!!.fileDescriptor,
+                        vpnInterface!!.fileDescriptor,
                         tunnelSocket!!,
                         dnsServer,
                         sendBuffer,
@@ -493,6 +527,7 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // ---------- PING ----------
     private fun startPing() {
         pingJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected) {
@@ -518,6 +553,7 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // ---------- NOTIFICATIONS ----------
     private fun showNotification(message: String) {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("HTTP Custom Clone")
@@ -535,6 +571,7 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // ---------- WAKELOCK ----------
     private fun acquireWakeLock() {
         try {
             wakeLock?.acquire(10 * 60 * 1000L)
@@ -575,4 +612,3 @@ class CustomVpnService : VpnService() {
         Log.d(TAG, "onDestroy finished")
     }
 }
-                  
