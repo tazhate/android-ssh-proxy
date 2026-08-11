@@ -27,6 +27,7 @@ class ConfigFragment : Fragment() {
     private lateinit var pingTargetInput: EditText
     private lateinit var enableCompressionCheck: CheckBox
     private lateinit var alwaysReconnectCheck: CheckBox
+    private lateinit var followRedirectsCheck: CheckBox   // NEW
     private lateinit var mtuInput: EditText
     private lateinit var sendBufferInput: EditText
     private lateinit var receiveBufferInput: EditText
@@ -48,6 +49,7 @@ class ConfigFragment : Fragment() {
     private var currentPingTarget: String = "1.1.1.1"
     private var currentEnableCompression: Boolean = true
     private var currentAlwaysReconnect: Boolean = false
+    private var currentFollowRedirects: Boolean = true   // NEW
     private var currentMtu: Int = 1500
     private var currentSendBuffer: Int = 16384
     private var currentReceiveBuffer: Int = 32768
@@ -77,7 +79,6 @@ class ConfigFragment : Fragment() {
                         updateStatus("Reconnecting...", android.R.color.holo_orange_dark)
                     }
                     else -> {
-                        // Keep button as is
                         updateStatus(status, android.R.color.holo_orange_dark)
                     }
                 }
@@ -96,6 +97,7 @@ class ConfigFragment : Fragment() {
         pingTargetInput = view.findViewById(R.id.pingTargetInput)
         enableCompressionCheck = view.findViewById(R.id.enableCompressionCheck)
         alwaysReconnectCheck = view.findViewById(R.id.alwaysReconnectCheck)
+        followRedirectsCheck = view.findViewById(R.id.followRedirectsCheck)   // NEW
         mtuInput = view.findViewById(R.id.mtuInput)
         sendBufferInput = view.findViewById(R.id.sendBufferInput)
         receiveBufferInput = view.findViewById(R.id.receiveBufferInput)
@@ -130,6 +132,7 @@ class ConfigFragment : Fragment() {
         val pingTarget = pingTargetInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.1.1.1"
         val enableCompression = enableCompressionCheck.isChecked
         val alwaysReconnect = alwaysReconnectCheck.isChecked
+        val followRedirects = followRedirectsCheck.isChecked   // NEW
         val mtu = mtuInput.text.toString().toIntOrNull() ?: 1500
         val sendBuffer = sendBufferInput.text.toString().toIntOrNull() ?: 16384
         val receiveBuffer = receiveBufferInput.text.toString().toIntOrNull() ?: 32768
@@ -153,10 +156,11 @@ class ConfigFragment : Fragment() {
 
         val (proxyHost, proxyPort) = decodeProxy(proxyString)
 
+        // Save config (including followRedirects)
         repository.saveConfig(
             sshDetails, proxyString, payload, splitDelay, dnsServer, pingTarget,
             enableCompression, mtu, sendBuffer, receiveBuffer, pingUrl, pingInterval, pingTimeout,
-            alwaysReconnect
+            alwaysReconnect, followRedirects   // NEW
         )
 
         LogManager.clearLogs()
@@ -166,6 +170,7 @@ class ConfigFragment : Fragment() {
         LogManager.addLog("[Config] Split Delay: ${splitDelay}ms")
         LogManager.addLog("[Config] Compression: $enableCompression")
         LogManager.addLog("[Config] Always Reconnect: $alwaysReconnect")
+        LogManager.addLog("[Config] Follow Redirects: $followRedirects")
         LogManager.addLog("[Config] MTU: $mtu")
         LogManager.addLog("[Config] Send Buffer: $sendBuffer")
         LogManager.addLog("[Config] Receive Buffer: $receiveBuffer")
@@ -189,6 +194,7 @@ class ConfigFragment : Fragment() {
         currentPingTarget = pingTarget
         currentEnableCompression = enableCompression
         currentAlwaysReconnect = alwaysReconnect
+        currentFollowRedirects = followRedirects   // NEW
         currentMtu = mtu
         currentSendBuffer = sendBuffer
         currentReceiveBuffer = receiveBuffer
@@ -202,7 +208,6 @@ class ConfigFragment : Fragment() {
     private fun disconnectAction() {
         LogManager.addLog("[INFO] Disconnect button pressed")
         stopVpnService()
-        // Immediately reset button and status
         toggleButton.text = "Connect"
         toggleButton.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
         updateStatus("Disconnected", android.R.color.holo_red_dark)
@@ -219,6 +224,7 @@ class ConfigFragment : Fragment() {
                 pingTargetInput.setText(config.pingTarget)
                 enableCompressionCheck.isChecked = config.enableCompression
                 alwaysReconnectCheck.isChecked = config.alwaysReconnect
+                followRedirectsCheck.isChecked = config.followRedirects   // NEW
                 mtuInput.setText(config.mtu.toString())
                 sendBufferInput.setText(config.sendBuffer.toString())
                 receiveBufferInput.setText(config.receiveBuffer.toString())
@@ -234,6 +240,7 @@ class ConfigFragment : Fragment() {
                 pingTargetInput.setText("1.1.1.1")
                 enableCompressionCheck.isChecked = true
                 alwaysReconnectCheck.isChecked = false
+                followRedirectsCheck.isChecked = true   // NEW
                 mtuInput.setText("1500")
                 sendBufferInput.setText("16384")
                 receiveBufferInput.setText("32768")
@@ -297,6 +304,10 @@ class ConfigFragment : Fragment() {
     }
 
     private fun startVpnService() {
+        // Debug logs to verify values
+        LogManager.addLog("[DEBUG] Sending proxyHost='$currentProxyHost', proxyPort='$currentProxyPort'")
+        LogManager.addLog("[DEBUG] Sending sshHost='$currentSshHost', sshPort='$currentSshPort'")
+
         val intent = Intent(requireContext(), CustomVpnService::class.java)
         intent.putExtra("sshHost", currentSshHost)
         intent.putExtra("sshPort", currentSshPort)
@@ -310,6 +321,7 @@ class ConfigFragment : Fragment() {
         intent.putExtra("pingTarget", currentPingTarget)
         intent.putExtra("enableCompression", currentEnableCompression)
         intent.putExtra("alwaysReconnect", currentAlwaysReconnect)
+        intent.putExtra("followRedirects", currentFollowRedirects)   // NEW
         intent.putExtra("mtu", currentMtu)
         intent.putExtra("sendBuffer", currentSendBuffer)
         intent.putExtra("receiveBuffer", currentReceiveBuffer)
