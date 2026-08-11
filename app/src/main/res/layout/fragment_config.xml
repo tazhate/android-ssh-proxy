@@ -176,6 +176,14 @@
             android:text="Always Reconnect (infinite retries)"
             android:checked="false"
             android:layout_marginTop="8dp" />
+        <!-- Follow Redirects -->
+<CheckBox
+    android:id="@+id/followRedirectsCheck"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="Follow HTTP Redirects (301, 302, 303, 307)"
+    android:checked="true"
+    android:layout_marginTop="8dp" />
 
         <!-- MTU -->
         <TextView
