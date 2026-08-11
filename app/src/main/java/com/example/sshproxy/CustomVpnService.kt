@@ -14,6 +14,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.example.sshproxy.payload.PayloadProcessor
 import com.example.sshproxy.network.TrafficRouter
 import com.jcraft.jsch.JSch
+import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -54,6 +55,7 @@ class CustomVpnService : VpnService() {
     private var pingTarget: String = "1.1.1.1"
     private var enableCompression: Boolean = true
     private var alwaysReconnect: Boolean = false
+    private var followRedirects: Boolean = true
     private var mtu: Int = 1500
     private var sendBuffer: Int = 16384
     private var receiveBuffer: Int = 32768
@@ -85,6 +87,7 @@ class CustomVpnService : VpnService() {
             pingTarget = it.getStringExtra("pingTarget") ?: "1.1.1.1"
             enableCompression = it.getBooleanExtra("enableCompression", true)
             alwaysReconnect = it.getBooleanExtra("alwaysReconnect", false)
+            followRedirects = it.getBooleanExtra("followRedirects", true)
             mtu = it.getIntExtra("mtu", 1500)
             sendBuffer = it.getIntExtra("sendBuffer", 16384)
             receiveBuffer = it.getIntExtra("receiveBuffer", 32768)
@@ -93,7 +96,7 @@ class CustomVpnService : VpnService() {
             pingTimeout = it.getIntExtra("pingTimeout", 5000)
         }
 
-        // Debug: log what we received
+        // DEBUG: Log what we received
         LogManager.addLog("[DEBUG] Received sshHost='$sshHost', sshPort='$sshPort'")
         LogManager.addLog("[DEBUG] Received proxyHost='$proxyHost', proxyPort='$proxyPort'")
 
@@ -143,7 +146,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // Helper to follow redirects (3xx)
     private fun handleRedirect(response: String, reader: BufferedReader): String? {
         if (!response.contains("301") && !response.contains("302") &&
             !response.contains("303") && !response.contains("307")) {
@@ -166,6 +168,7 @@ class CustomVpnService : VpnService() {
 
         while (!isConnected && !isReconnecting && attempt < maxRetries) {
             attempt++
+            var compressionRetry = false // flag to retry without compression
             try {
                 val proxyString = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) "$proxyHost:$proxyPort" else ""
                 var processedPayload = PayloadProcessor.processPayload(
@@ -176,7 +179,6 @@ class CustomVpnService : VpnService() {
                     "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36"
                 )
 
-                // Auto‑insert [split] for WebSocket
                 if (processedPayload.contains("Upgrade: websocket", ignoreCase = true) && !processedPayload.contains("[split]")) {
                     val blankLineIndex = processedPayload.indexOf("\r\n\r\n")
                     if (blankLineIndex != -1) {
@@ -206,6 +208,9 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("ssh connect via http proxy")
                 LogManager.addLog("Set timeout 15 sec")
 
+                // Always create a fresh socket for each attempt
+                tunnelSocket?.close()
+                tunnelSocket = null
                 tunnelSocket = Socket()
                 tunnelSocket?.connect(InetSocketAddress(proxyAddress, proxyPortNumber), 15000)
                 tunnelSocket?.keepAlive = true
@@ -224,9 +229,10 @@ class CustomVpnService : VpnService() {
                 val responseLine = reader.readLine()
                 LogManager.addLog("<<< Server response: $responseLine")
 
-                // Handle redirects (301, 302, 303, 307)
-                if (responseLine != null && (responseLine.contains("301") || responseLine.contains("302") ||
-                        responseLine.contains("303") || responseLine.contains("307"))) {
+                // Handle redirects if enabled
+                if (followRedirects && responseLine != null &&
+                    (responseLine.contains("301") || responseLine.contains("302") ||
+                     responseLine.contains("303") || responseLine.contains("307"))) {
                     val newLocation = handleRedirect(responseLine, reader)
                     if (newLocation != null) {
                         try {
@@ -245,11 +251,13 @@ class CustomVpnService : VpnService() {
                     }
                 }
 
-                // Accept 200, 101, and any 2xx/3xx that aren't redirects
-                if (responseLine != null && (responseLine.contains("200") || responseLine.contains("101") ||
-                        responseLine.startsWith("HTTP/1.1 2") || responseLine.startsWith("HTTP/1.1 3"))) {
+                // Accept 200, 101, and any 2xx/3xx (except redirects)
+                if (responseLine != null &&
+                    (responseLine.contains("200") || responseLine.contains("101") ||
+                     responseLine.startsWith("HTTP/1.1 2") ||
+                     (responseLine.startsWith("HTTP/1.1 3") && !followRedirects))) {
                     LogManager.addLog("Server accepted connection. Establishing SSH...")
-                    establishSSH()
+                    establishSSH(compressionRetry) // pass the retry flag
                     reconnectAttempts = 0
                     return
                 } else {
@@ -264,9 +272,25 @@ class CustomVpnService : VpnService() {
                 PayloadProcessor.rotateIndex++
                 tunnelSocket?.close()
                 tunnelSocket = null
+            } catch (e: JSchException) {
+                // Specific SSH errors
+                if (e.message?.contains("Algorithm negotiation") == true && enableCompression) {
+                    // Server doesn't support compression – retry without it
+                    LogManager.addLog("[ERROR] Compression not supported. Disabling and retrying...")
+                    enableCompression = false
+                    compressionRetry = true
+                    tunnelSocket?.close()
+                    tunnelSocket = null
+                    // Do NOT increment rotateIndex – stay on same host
+                    continue
+                } else {
+                    LogManager.addLog("[ERROR] SSH failed: ${e.message}")
+                    PayloadProcessor.rotateIndex++
+                    tunnelSocket?.close()
+                    tunnelSocket = null
+                }
             } catch (e: Exception) {
                 LogManager.addLog("[ERROR] Problem connecting: ${e.message}")
-                LogManager.addLog("Retrying with next host...")
                 PayloadProcessor.rotateIndex++
                 tunnelSocket?.close()
                 tunnelSocket = null
@@ -284,7 +308,7 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    private fun establishSSH() {
+    private fun establishSSH(compressionRetry: Boolean = false) {
         try {
             val jsch = JSch()
             sshSession = jsch.getSession(sshUser, sshHost, sshPort.toInt())
@@ -294,10 +318,13 @@ class CustomVpnService : VpnService() {
             sshSession?.setConfig("ServerAliveCountMax", "3")
             sshSession?.setConfig("TCPKeepAlive", "yes")
 
-            if (enableCompression) {
+            // Only enable compression if the flag is true and this is not a retry
+            if (enableCompression && !compressionRetry) {
                 sshSession?.setConfig("compression.s2c", "zlib@openssh.com")
                 sshSession?.setConfig("compression.c2s", "zlib@openssh.com")
                 LogManager.addLog("SSH compression enabled (zlib)")
+            } else {
+                LogManager.addLog("SSH compression disabled")
             }
 
             sshSession?.setSocketFactory(object : com.jcraft.jsch.SocketFactory {
@@ -330,6 +357,20 @@ class CustomVpnService : VpnService() {
                 startReconnectMonitor()
             } else {
                 LogManager.addLog("[ERROR] SSH connection failed")
+                showNotification("SSH failed")
+                sendStatus("Disconnected")
+                stopSelf()
+            }
+        } catch (e: JSchException) {
+            if (e.message?.contains("Algorithm negotiation") == true && enableCompression) {
+                // Compression failed – trigger retry without compression
+                LogManager.addLog("[ERROR] Compression not supported. Disabling and retrying...")
+                enableCompression = false
+                // The outer connectToServer will retry on the same host
+                throw e // rethrow to be caught in connectToServer
+            } else {
+                LogManager.addLog("[ERROR] SSH failed: ${e.message}")
+                e.printStackTrace()
                 showNotification("SSH failed")
                 sendStatus("Disconnected")
                 stopSelf()
@@ -419,7 +460,7 @@ class CustomVpnService : VpnService() {
                 if (tunnelSocket != null && vpnInterface != null && !tunnelSocket!!.isClosed) {
                     trafficRouter = TrafficRouter(
                         this,
-                        vpnInterface!!.fileDescriptor,
+                                                vpnInterface!!.fileDescriptor,
                         tunnelSocket!!,
                         dnsServer,
                         sendBuffer,
@@ -472,7 +513,7 @@ class CustomVpnService : VpnService() {
                     }
                 } catch (e: Exception) {
                     LogManager.addLog("Ping timeout")
-                                    }
+                }
             }
         }
     }
@@ -534,4 +575,4 @@ class CustomVpnService : VpnService() {
         Log.d(TAG, "onDestroy finished")
     }
 }
-          
+                  
