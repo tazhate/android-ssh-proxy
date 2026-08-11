@@ -1,14 +1,20 @@
 package com.example.sshproxy.network
 
 import android.util.Log
+import java.io.BufferedReader
 import java.io.FileDescriptor
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.io.InputStreamReader
+import java.net.HttpURLConnection
 import java.net.InetAddress
 import java.net.Socket
+import java.net.URL
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
+import java.util.Base64
 import com.example.sshproxy.LogManager
+import org.json.JSONObject
 
 class TrafficRouter(
     private val vpnService: android.net.VpnService,
@@ -21,6 +27,7 @@ class TrafficRouter(
     private val TAG = "TrafficRouter"
     private var isRunning = false
     private val KEEP_ALIVE_INTERVAL = 3000L
+    private val DOH_URL = "https://cloudflare-dns.com/dns-query"
 
     fun start() {
         try {
@@ -38,7 +45,6 @@ class TrafficRouter(
                     val bufferSize = maxOf(sendBufferSize, receiveBufferSize)
                     val buffer = ByteArray(bufferSize)
 
-                    // Keep-alive thread (space char every 3s)
                     val keepAliveThread = Thread {
                         while (isRunning) {
                             try {
@@ -52,18 +58,19 @@ class TrafficRouter(
                     }
                     keepAliveThread.start()
 
-                    // ---------- READ THREAD (TUN → SSH) with DNS detection ----------
                     val readThread = Thread {
                         LogManager.addLog("Read thread started")
                         while (isRunning) {
                             try {
                                 val len = inputStream.read(buffer)
                                 if (len > 0) {
-                                    // Check if this is a UDP DNS packet (port 53)
                                     if (isDnsQuery(buffer, len)) {
-                                        handleDnsQueryOverTcp(buffer, len, outputStream, tunnelOutput)
+                                        try {
+                                            handleDnsOverHttps(buffer, len, outputStream)
+                                        } catch (e: Exception) {
+                                            LogManager.addLog("[DNS] DoH error: ${e.message} – skipping")
+                                        }
                                     } else {
-                                        // Normal TCP traffic → forward to SSH
                                         tunnelOutput.write(buffer, 0, len)
                                         tunnelOutput.flush()
                                     }
@@ -76,7 +83,6 @@ class TrafficRouter(
                         LogManager.addLog("Read thread stopped")
                     }
 
-                    // ---------- WRITE THREAD (SSH → TUN) ----------
                     val writeThread = Thread {
                         LogManager.addLog("Write thread started")
                         while (isRunning) {
@@ -109,8 +115,6 @@ class TrafficRouter(
         }
     }
 
-    // ---------- DNS HELPER FUNCTIONS ----------
-
     private fun isDnsQuery(data: ByteArray, len: Int): Boolean {
         if (len < 28) return false
         val version = (data[0].toInt() and 0xF0) shr 4
@@ -121,74 +125,152 @@ class TrafficRouter(
         return dstPort == 53
     }
 
-    /**
-     * Handle DNS query via TCP through the existing SSH socket.
-     * RFC 1035: DNS over TCP uses a 2-byte length prefix (network order) followed by the DNS message.
-     */
-    private fun handleDnsQueryOverTcp(data: ByteArray, len: Int, tunOutput: FileOutputStream, sshOutput: java.io.OutputStream) {
-        try {
-            // Extract source IP and port from IP header
-            val srcIp = data.copyOfRange(12, 16) // 4 bytes
-            val srcPort = ((data[20].toInt() and 0xFF) shl 8) or (data[21].toInt() and 0xFF)
-            // DNS payload starts after IP header (20) + UDP header (8) = 28 bytes
-            val dnsData = data.copyOfRange(28, len)
+    private fun handleDnsOverHttps(data: ByteArray, len: Int, tunOutput: FileOutputStream) {
+        val srcIp = data.copyOfRange(12, 16)
+        val srcPort = ((data[20].toInt() and 0xFF) shl 8) or (data[21].toInt() and 0xFF)
+        val dnsQuery = data.copyOfRange(28, len)
 
-            // Build TCP frame: 2-byte length (big-endian) + DNS data
-            val tcpFrame = ByteBuffer.allocate(2 + dnsData.size)
-            tcpFrame.order(ByteOrder.BIG_ENDIAN)
-            tcpFrame.putShort(dnsData.size.toShort())
-            tcpFrame.put(dnsData)
+        val (id, flags, qdcount, qname, qtype, qclass) = parseDnsQuery(dnsQuery)
 
-            // Send DNS query over TCP via the SSH socket
-            sshOutput.write(tcpFrame.array())
-            sshOutput.flush()
-            LogManager.addLog("[DNS] Sent TCP query (${dnsData.size} bytes)")
+        val encoded = Base64.getUrlEncoder().withoutPadding().encodeToString(dnsQuery)
+        val url = URL("$DOH_URL?dns=$encoded")
+        val connection = url.openConnection() as HttpURLConnection
+        connection.requestMethod = "GET"
+        connection.setRequestProperty("Accept", "application/dns-json")
+        connection.connectTimeout = 5000
+        connection.readTimeout = 5000
 
-            // Read the TCP response from the SSH socket
-            // First 2 bytes = response length
-            val lenBuffer = ByteArray(2)
-            var read = 0
-            while (read < 2) {
-                val n = tunnelSocket.getInputStream().read(lenBuffer, read, 2 - read)
-                if (n < 0) throw Exception("EOF reading length")
-                read += n
-            }
-            val responseLen = ByteBuffer.wrap(lenBuffer).order(ByteOrder.BIG_ENDIAN).getShort().toInt()
-            if (responseLen <= 0 || responseLen > 4096) {
-                LogManager.addLog("[DNS] Invalid response length: $responseLen")
-                return
-            }
-
-            val responseData = ByteArray(responseLen)
-            read = 0
-            while (read < responseLen) {
-                val n = tunnelSocket.getInputStream().read(responseData, read, responseLen - read)
-                if (n < 0) throw Exception("EOF reading response")
-                read += n
-            }
-
-            // Build UDP response packet (IP header + UDP header + DNS response)
-            val outPacket = buildUdpResponsePacket(srcIp, srcPort, responseData)
-            tunOutput.write(outPacket)
-            tunOutput.flush()
-            LogManager.addLog("[DNS] Received TCP response (${responseData.size} bytes)")
-
-        } catch (e: Exception) {
-            LogManager.addLog("[DNS] Error: ${e.message}")
+        val responseCode = connection.responseCode
+        if (responseCode != 200) {
+            LogManager.addLog("[DNS] DoH HTTP error: $responseCode")
+            return
         }
+
+        val reader = BufferedReader(InputStreamReader(connection.inputStream))
+        val json = StringBuilder()
+        var line: String?
+        while (reader.readLine().also { line = it } != null) {
+            json.append(line)
+        }
+        reader.close()
+
+        val obj = JSONObject(json.toString())
+        val answerArray = obj.optJSONArray("Answer")
+        if (answerArray == null || answerArray.length() == 0) {
+            LogManager.addLog("[DNS] No answer for $qname")
+            val emptyResponse = buildDnsResponse(id, flags, qdcount, qname, qtype, qclass, emptyList())
+            tunOutput.write(buildUdpPacket(srcIp, srcPort, emptyResponse))
+            tunOutput.flush()
+            return
+        }
+
+        val answers = mutableListOf<Triple<String, Int, String>>()
+        for (i in 0 until answerArray.length()) {
+            val ans = answerArray.getJSONObject(i)
+            val name = ans.getString("name")
+            val type = ans.getInt("type")
+            val data = ans.getString("data")
+            answers.add(Triple(name, type, data))
+        }
+
+        LogManager.addLog("[DNS] Resolved $qname → ${answers.map { it.third }.joinToString()}")
+
+        val response = buildDnsResponse(id, flags, qdcount, qname, qtype, qclass, answers)
+        val udpPacket = buildUdpPacket(srcIp, srcPort, response)
+        tunOutput.write(udpPacket)
+        tunOutput.flush()
+        LogManager.addLog("[DNS] DoH response sent (${answers.size} answers)")
     }
 
-    // Build a UDP response packet: IP header + UDP header + DNS data
-    private fun buildUdpResponsePacket(
-        destIp: ByteArray,  // original source IP (now destination for the response)
-        destPort: Int,      // original source port
-        dnsResponse: ByteArray
-    ): ByteArray {
-        val totalLen = 20 + 8 + dnsResponse.size
-        val buffer = ByteBuffer.allocate(totalLen)
-        buffer.order(ByteOrder.BIG_ENDIAN)
+    private fun parseDnsQuery(data: ByteArray): DnsQueryResult {
+        val bb = ByteBuffer.wrap(data).order(ByteOrder.BIG_ENDIAN)
+        val id = bb.short
+        val flags = bb.short
+        val qdcount = bb.short
+        val qname = StringBuilder()
+        var len = bb.get().toInt() and 0xFF
+        while (len != 0) {
+            if (len > 0) {
+                val label = ByteArray(len)
+                bb.get(label)
+                qname.append(String(label)).append(".")
+                len = bb.get().toInt() and 0xFF
+            } else {
+                break
+            }
+        }
+        if (qname.isNotEmpty()) qname.deleteCharAt(qname.length - 1)
+        val qtype = bb.short
+        val qclass = bb.short
+        return DnsQueryResult(id, flags, qdcount, qname.toString(), qtype, qclass)
+    }
+    private data class DnsQueryResult(
+        val id: Short,
+        val flags: Short,
+        val qdcount: Short,
+        val qname: String,
+        val qtype: Short,
+        val qclass: Short
+    )
 
-        // ----- IP HEADER (20 bytes) -----
+    private fun buildDnsResponse(
+        id: Short,
+        originalFlags: Short,
+        qdcount: Short,
+        qname: String,
+        qtype: Short,
+        qclass: Short,
+        answers: List<Triple<String, Int, String>>
+    ): ByteArray {
+        val flags = 0x8180.toShort()
+        val baos = java.io.ByteArrayOutputStream()
+        val dos = java.io.DataOutputStream(baos)
+
+        dos.writeShort(id.toInt())
+        dos.writeShort(flags.toInt())
+        dos.writeShort(qdcount.toInt())
+        dos.writeShort(answers.size)
+        dos.writeShort(0)
+        dos.writeShort(0)
+
+        val qnameBytes = encodeDomainName(qname)
+        dos.write(qnameBytes)
+        dos.writeShort(qtype.toInt())
+        dos.writeShort(qclass.toInt())
+
+        for ((name, type, data) in answers) {
+            dos.writeShort(0xc00c) // pointer to QNAME
+            dos.writeShort(type.toShort().toInt())
+            dos.writeShort(qclass.toInt())
+            dos.writeInt(300) // TTL
+            val rdata = when (type) {
+                1 -> InetAddress.getByName(data).address
+                28 -> InetAddress.getByName(data).address
+                else -> data.toByteArray()
+            }
+            dos.writeShort(rdata.size)
+            dos.write(rdata)
+        }
+
+        dos.flush()
+        return baos.toByteArray()
+    }
+
+    private fun encodeDomainName(name: String): ByteArray {
+        val baos = java.io.ByteArrayOutputStream()
+        val labels = name.split(".")
+        for (label in labels) {
+            baos.write(label.length)
+            baos.write(label.toByteArray())
+        }
+        baos.write(0)
+        return baos.toByteArray()
+    }
+
+    private fun buildUdpPacket(destIp: ByteArray, destPort: Int, payload: ByteArray): ByteArray {
+        val totalLen = 20 + 8 + payload.size
+        val buffer = ByteBuffer.allocate(totalLen).order(ByteOrder.BIG_ENDIAN)
+
         buffer.put(0x45.toByte())
         buffer.put(0.toByte())
         buffer.putShort(totalLen.toShort())
@@ -197,19 +279,15 @@ class TrafficRouter(
         buffer.put(64.toByte())
         buffer.put(17.toByte())
         buffer.putShort(0)
-        // Source IP (the DNS server) – we set it to the configured DNS server
         val dnsServerIp = InetAddress.getByName(dnsServer).address
         buffer.put(dnsServerIp)
         buffer.put(destIp)
 
-        // ----- UDP HEADER (8 bytes) -----
-        buffer.putShort(53.toShort())          // Source port (DNS)
-        buffer.putShort(destPort.toShort())    // Destination port (client)
-        buffer.putShort((8 + dnsResponse.size).toShort())
-        buffer.putShort(0)                     // UDP checksum (optional)
-
-        // ----- DNS PAYLOAD -----
-        buffer.put(dnsResponse)
+        buffer.putShort(53.toShort())
+        buffer.putShort(destPort.toShort())
+        buffer.putShort((8 + payload.size).toShort())
+        buffer.putShort(0)
+        buffer.put(payload)
 
         return buffer.array()
     }
