@@ -25,7 +25,8 @@ class ConfigRepository(private val context: android.content.Context) {
         pingUrl: String,
         pingInterval: Int,
         pingTimeout: Int,
-        alwaysReconnect: Boolean
+        alwaysReconnect: Boolean,
+        followRedirects: Boolean   // NEW
     ) {
         CoroutineScope(Dispatchers.IO).launch {
             val entity = ConfigEntity(
@@ -42,7 +43,8 @@ class ConfigRepository(private val context: android.content.Context) {
                 pingUrl = pingUrl,
                 pingInterval = pingInterval,
                 pingTimeout = pingTimeout,
-                alwaysReconnect = alwaysReconnect
+                alwaysReconnect = alwaysReconnect,
+                followRedirects = followRedirects
             )
             dao.insert(entity)
         }
