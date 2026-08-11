@@ -12,8 +12,7 @@ data class ConfigEntity(
     val payload: String,
     val splitDelay: Int,
     val dnsServer: String,
-    val pingTarget: String, // kept for compatibility – will be replaced by pingUrl
-    // New fields
+    val pingTarget: String,
     val enableCompression: Boolean = true,
     val mtu: Int = 1500,
     val sendBuffer: Int = 16384,
@@ -21,5 +20,6 @@ data class ConfigEntity(
     val pingUrl: String = "https://dns.google",
     val pingInterval: Int = 2000,
     val pingTimeout: Int = 5000,
-    val alwaysReconnect: Boolean = false
+    val alwaysReconnect: Boolean = false,
+    val followRedirects: Boolean = true   // NEW
 )
