@@ -6,6 +6,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.net.VpnService
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
@@ -148,12 +150,6 @@ class ConfigFragment : Fragment() {
         }
 
         val (host, port, user, pass) = parseResult
-        if (host.isEmpty() || port.isEmpty() || user.isEmpty() || pass.isEmpty()) {
-            LogManager.addLog("[ERROR] SSH details incomplete")
-            updateStatus("Incomplete SSH details", android.R.color.holo_red_dark)
-            return
-        }
-
         val (proxyHost, proxyPort) = decodeProxy(proxyString)
 
         repository.saveConfig(
@@ -206,10 +202,19 @@ class ConfigFragment : Fragment() {
 
     private fun disconnectAction() {
         LogManager.addLog("[INFO] Disconnect button pressed")
-        stopVpnService()
         toggleButton.text = "Connect"
         toggleButton.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
-        updateStatus("Disconnected", android.R.color.holo_red_dark)
+        updateStatus("Disconnecting...", android.R.color.holo_orange_dark)
+
+        stopVpnService()
+
+        Handler(Looper.getMainLooper()).postDelayed({
+            if (toggleButton.text == "Disconnect") {
+                toggleButton.text = "Connect"
+                toggleButton.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
+                updateStatus("Disconnected", android.R.color.holo_red_dark)
+            }
+        }, 2000)
     }
 
     private fun loadSavedConfig() {
@@ -303,8 +308,8 @@ class ConfigFragment : Fragment() {
     }
 
     private fun startVpnService() {
-        LogManager.addLog("[DEBUG] Sending proxyHost='$currentProxyHost', proxyPort='$currentProxyPort'")
         LogManager.addLog("[DEBUG] Sending sshHost='$currentSshHost', sshPort='$currentSshPort'")
+        LogManager.addLog("[DEBUG] Sending proxyHost='$currentProxyHost', proxyPort='$currentProxyPort'")
 
         val intent = Intent(requireContext(), CustomVpnService::class.java)
         intent.putExtra("sshHost", currentSshHost)
