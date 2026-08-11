@@ -158,18 +158,13 @@ class CustomVpnService : VpnService() {
         return null
     }
 
-    // ---------- NEW: drain HTTP headers before SSH ----------
     private fun drainHttpHeaders(reader: BufferedReader) {
         var line: String?
         while (reader.ready().also { line = reader.readLine() } && line != null) {
-            if (line!!.isEmpty()) {
-                // End of HTTP headers
-                break
-            }
+            if (line!!.isEmpty()) break
         }
     }
 
-    // ---------- MAIN CONNECTION LOOP ----------
     private fun connectToServer() {
         var attempt = 0
         val maxRetries = if (alwaysReconnect) Int.MAX_VALUE else 10
@@ -187,15 +182,15 @@ class CustomVpnService : VpnService() {
                     "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36"
                 )
 
-                if (processedPayload.contains("Upgrade: websocket", ignoreCase = true) && !processedPayload.contains("[split]")) {
-                    val blankLineIndex = processedPayload.indexOf("\r\n\r\n")
-                    if (blankLineIndex != -1) {
-                        val before = processedPayload.substring(0, blankLineIndex + 4)
-                        val after = processedPayload.substring(blankLineIndex + 4)
-                        processedPayload = before + "[split]" + after
-                        LogManager.addLog("[AUTO] Inserted [split] for WebSocket upgrade.")
+                // Smarter auto‑insert: place [split] before VERSION-CONTROL
+                if (processedPayload.contains("VERSION-CONTROL", ignoreCase = true) && !processedPayload.contains("[split]")) {
+                    val index = processedPayload.indexOf("VERSION-CONTROL", ignoreCase = true)
+                    if (index != -1) {
+                        processedPayload = processedPayload.substring(0, index) + "[split]" + processedPayload.substring(index)
+                        LogManager.addLog("[AUTO] Inserted [split] before VERSION-CONTROL.")
                     }
                 }
+                LogManager.addLog(">>> Payload:\n$processedPayload")
 
                 val proxyAddress = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) {
                     LogManager.addLog("Connecting via proxy: $proxyHost:$proxyPort")
@@ -212,11 +207,8 @@ class CustomVpnService : VpnService() {
 
                 LogManager.addLog("prepare to connecting server")
                 LogManager.addLog("begin to connecting server")
-                LogManager.addLog("enable ssh compression")
-                LogManager.addLog("ssh connect via http proxy")
                 LogManager.addLog("Set timeout 25 sec")
 
-                // Clean socket
                 tunnelSocket?.close()
                 tunnelSocket = null
                 tunnelSocket = Socket()
@@ -237,7 +229,6 @@ class CustomVpnService : VpnService() {
                 val responseLine = reader.readLine()
                 LogManager.addLog("<<< Server response: $responseLine")
 
-                // Handle redirects if enabled
                 if (followRedirects && responseLine != null &&
                     (responseLine.contains("301") || responseLine.contains("302") ||
                      responseLine.contains("303") || responseLine.contains("307"))) {
@@ -259,14 +250,13 @@ class CustomVpnService : VpnService() {
                     }
                 }
 
-                // Accept 200, 101, 400, 403, 2xx, and (if not following) 3xx
                 if (responseLine != null &&
                     (responseLine.contains("200") || responseLine.contains("101") ||
                      responseLine.contains("400") || responseLine.contains("403") ||
                      responseLine.startsWith("HTTP/1.1 2") ||
                      (responseLine.startsWith("HTTP/1.1 3") && !followRedirects))) {
                     LogManager.addLog("Server accepted connection. Draining HTTP headers...")
-                    drainHttpHeaders(reader)   // <-- CRITICAL FIX
+                    drainHttpHeaders(reader)
                     LogManager.addLog("Establishing SSH...")
                     try {
                         establishSSH(compressionFailed)
@@ -281,7 +271,7 @@ class CustomVpnService : VpnService() {
                             tunnelSocket = null
                             continue
                         } else {
-                            throw e // rethrow to outer catch
+                            throw e
                         }
                     }
                 } else {
@@ -297,7 +287,6 @@ class CustomVpnService : VpnService() {
                 tunnelSocket?.close()
                 tunnelSocket = null
             } catch (e: JSchException) {
-                // Catch SSH errors from establishSSH (including timeouts)
                 if (e.cause is java.net.SocketTimeoutException || e.message?.contains("timeout") == true) {
                     LogManager.addLog("[ERROR] SSH handshake timeout – rotating host")
                     PayloadProcessor.rotateIndex++
@@ -335,10 +324,8 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ---------- SSH ESTABLISHMENT ----------
     private fun establishSSH(compressionRetry: Boolean = false) {
         try {
-            // Add a delay before SSH handshake if splitDelayMs > 0
             if (splitDelayMs > 0) {
                 LogManager.addLog("Waiting ${splitDelayMs}ms before SSH handshake...")
                 Thread.sleep(splitDelayMs.toLong())
@@ -364,17 +351,10 @@ class CustomVpnService : VpnService() {
                 override fun createSocket(host: String?, port: Int): Socket {
                     return tunnelSocket ?: Socket(host, port)
                 }
-
-                override fun getInputStream(socket: Socket): java.io.InputStream {
-                    return socket.getInputStream()
-                }
-
-                override fun getOutputStream(socket: Socket): java.io.OutputStream {
-                    return socket.getOutputStream()
-                }
+                override fun getInputStream(socket: Socket): java.io.InputStream = socket.getInputStream()
+                override fun getOutputStream(socket: Socket): java.io.OutputStream = socket.getOutputStream()
             })
 
-            // Increased timeout to 25s
             sshSession?.connect(25000)
 
             if (sshSession?.isConnected == true) {
@@ -399,7 +379,7 @@ class CustomVpnService : VpnService() {
             if (e.message?.contains("Algorithm negotiation") == true && enableCompression) {
                 LogManager.addLog("[ERROR] Compression not supported. Disabling and retrying...")
                 enableCompression = false
-                throw e // rethrow to be caught in connectToServer
+                throw e
             } else {
                 LogManager.addLog("[ERROR] SSH failed: ${e.message}")
                 e.printStackTrace()
@@ -416,7 +396,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ---------- RECONNECT MONITOR ----------
     private fun startReconnectMonitor() {
         reconnectJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected) {
@@ -450,7 +429,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ---------- VPN SETUP ----------
     private fun setupVpn() {
         try {
             if (tunnelSocket == null || tunnelSocket!!.isClosed || !tunnelSocket!!.isConnected) {
@@ -527,7 +505,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ---------- PING ----------
     private fun startPing() {
         pingJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected) {
@@ -553,7 +530,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ---------- NOTIFICATIONS ----------
     private fun showNotification(message: String) {
         val notification = NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("HTTP Custom Clone")
@@ -571,7 +547,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ---------- WAKELOCK ----------
     private fun acquireWakeLock() {
         try {
             wakeLock?.acquire(10 * 60 * 1000L)
@@ -606,6 +581,8 @@ class CustomVpnService : VpnService() {
         vpnInterface?.close()
         vpnInterface = null
         stopForeground(true)
+        val notificationManager = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        notificationManager.cancel(NOTIFICATION_ID)
         sendStatus("Disconnected")
         LogManager.addLog("VPN stopped")
         releaseWakeLock()
