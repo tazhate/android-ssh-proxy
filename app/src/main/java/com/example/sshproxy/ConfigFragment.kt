@@ -49,7 +49,7 @@ class ConfigFragment : Fragment() {
     private var currentPingTarget: String = "1.1.1.1"
     private var currentEnableCompression: Boolean = true
     private var currentAlwaysReconnect: Boolean = false
-    private var currentFollowRedirects: Boolean = true   // NEW
+    private var currentFollowRedirects: Boolean = true
     private var currentMtu: Int = 1500
     private var currentSendBuffer: Int = 16384
     private var currentReceiveBuffer: Int = 32768
@@ -132,7 +132,7 @@ class ConfigFragment : Fragment() {
         val pingTarget = pingTargetInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.1.1.1"
         val enableCompression = enableCompressionCheck.isChecked
         val alwaysReconnect = alwaysReconnectCheck.isChecked
-        val followRedirects = followRedirectsCheck.isChecked   // NEW
+        val followRedirects = followRedirectsCheck.isChecked
         val mtu = mtuInput.text.toString().toIntOrNull() ?: 1500
         val sendBuffer = sendBufferInput.text.toString().toIntOrNull() ?: 16384
         val receiveBuffer = receiveBufferInput.text.toString().toIntOrNull() ?: 32768
@@ -156,11 +156,11 @@ class ConfigFragment : Fragment() {
 
         val (proxyHost, proxyPort) = decodeProxy(proxyString)
 
-        // Save config (including followRedirects)
+        // Save config (now with followRedirects)
         repository.saveConfig(
             sshDetails, proxyString, payload, splitDelay, dnsServer, pingTarget,
             enableCompression, mtu, sendBuffer, receiveBuffer, pingUrl, pingInterval, pingTimeout,
-            alwaysReconnect, followRedirects   // NEW
+            alwaysReconnect, followRedirects
         )
 
         LogManager.clearLogs()
@@ -194,7 +194,7 @@ class ConfigFragment : Fragment() {
         currentPingTarget = pingTarget
         currentEnableCompression = enableCompression
         currentAlwaysReconnect = alwaysReconnect
-        currentFollowRedirects = followRedirects   // NEW
+        currentFollowRedirects = followRedirects
         currentMtu = mtu
         currentSendBuffer = sendBuffer
         currentReceiveBuffer = receiveBuffer
@@ -224,7 +224,7 @@ class ConfigFragment : Fragment() {
                 pingTargetInput.setText(config.pingTarget)
                 enableCompressionCheck.isChecked = config.enableCompression
                 alwaysReconnectCheck.isChecked = config.alwaysReconnect
-                followRedirectsCheck.isChecked = config.followRedirects   // NEW
+                followRedirectsCheck.isChecked = config.followRedirects
                 mtuInput.setText(config.mtu.toString())
                 sendBufferInput.setText(config.sendBuffer.toString())
                 receiveBufferInput.setText(config.receiveBuffer.toString())
@@ -240,7 +240,7 @@ class ConfigFragment : Fragment() {
                 pingTargetInput.setText("1.1.1.1")
                 enableCompressionCheck.isChecked = true
                 alwaysReconnectCheck.isChecked = false
-                followRedirectsCheck.isChecked = true   // NEW
+                followRedirectsCheck.isChecked = true
                 mtuInput.setText("1500")
                 sendBufferInput.setText("16384")
                 receiveBufferInput.setText("32768")
@@ -304,7 +304,6 @@ class ConfigFragment : Fragment() {
     }
 
     private fun startVpnService() {
-        // Debug logs to verify values
         LogManager.addLog("[DEBUG] Sending proxyHost='$currentProxyHost', proxyPort='$currentProxyPort'")
         LogManager.addLog("[DEBUG] Sending sshHost='$currentSshHost', sshPort='$currentSshPort'")
 
@@ -321,7 +320,7 @@ class ConfigFragment : Fragment() {
         intent.putExtra("pingTarget", currentPingTarget)
         intent.putExtra("enableCompression", currentEnableCompression)
         intent.putExtra("alwaysReconnect", currentAlwaysReconnect)
-        intent.putExtra("followRedirects", currentFollowRedirects)   // NEW
+        intent.putExtra("followRedirects", currentFollowRedirects)
         intent.putExtra("mtu", currentMtu)
         intent.putExtra("sendBuffer", currentSendBuffer)
         intent.putExtra("receiveBuffer", currentReceiveBuffer)
