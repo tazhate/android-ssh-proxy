@@ -4,8 +4,6 @@ import android.util.Log
 import java.io.FileDescriptor
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.net.DatagramPacket
-import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.Socket
 import java.nio.ByteBuffer
@@ -23,8 +21,6 @@ class TrafficRouter(
     private val TAG = "TrafficRouter"
     private var isRunning = false
     private val KEEP_ALIVE_INTERVAL = 3000L
-    private val dnsSocket = DatagramSocket()
-    private val dnsPort = 53
 
     fun start() {
         try {
@@ -39,10 +35,10 @@ class TrafficRouter(
                     val outputStream = FileOutputStream(tunFileDescriptor)
                     val tunnelInput = tunnelSocket.getInputStream()
                     val tunnelOutput = tunnelSocket.getOutputStream()
-                    // Use the larger of the two buffers for reading from TUN
                     val bufferSize = maxOf(sendBufferSize, receiveBufferSize)
                     val buffer = ByteArray(bufferSize)
 
+                    // Keep-alive thread (space char every 3s)
                     val keepAliveThread = Thread {
                         while (isRunning) {
                             try {
@@ -56,15 +52,18 @@ class TrafficRouter(
                     }
                     keepAliveThread.start()
 
+                    // ---------- READ THREAD (TUN → SSH) with DNS detection ----------
                     val readThread = Thread {
                         LogManager.addLog("Read thread started")
                         while (isRunning) {
                             try {
                                 val len = inputStream.read(buffer)
                                 if (len > 0) {
+                                    // Check if this is a UDP DNS packet (port 53)
                                     if (isDnsQuery(buffer, len)) {
-                                        handleDnsQuery(buffer, len, outputStream)
+                                        handleDnsQueryOverTcp(buffer, len, outputStream, tunnelOutput)
                                     } else {
+                                        // Normal TCP traffic → forward to SSH
                                         tunnelOutput.write(buffer, 0, len)
                                         tunnelOutput.flush()
                                     }
@@ -77,6 +76,7 @@ class TrafficRouter(
                         LogManager.addLog("Read thread stopped")
                     }
 
+                    // ---------- WRITE THREAD (SSH → TUN) ----------
                     val writeThread = Thread {
                         LogManager.addLog("Write thread started")
                         while (isRunning) {
@@ -109,6 +109,8 @@ class TrafficRouter(
         }
     }
 
+    // ---------- DNS HELPER FUNCTIONS ----------
+
     private fun isDnsQuery(data: ByteArray, len: Int): Boolean {
         if (len < 28) return false
         val version = (data[0].toInt() and 0xF0) shr 4
@@ -119,40 +121,74 @@ class TrafficRouter(
         return dstPort == 53
     }
 
-    private fun handleDnsQuery(data: ByteArray, len: Int, tunOutput: FileOutputStream) {
+    /**
+     * Handle DNS query via TCP through the existing SSH socket.
+     * RFC 1035: DNS over TCP uses a 2-byte length prefix (network order) followed by the DNS message.
+     */
+    private fun handleDnsQueryOverTcp(data: ByteArray, len: Int, tunOutput: FileOutputStream, sshOutput: java.io.OutputStream) {
         try {
-            val srcIp = data.copyOfRange(12, 16)
+            // Extract source IP and port from IP header
+            val srcIp = data.copyOfRange(12, 16) // 4 bytes
             val srcPort = ((data[20].toInt() and 0xFF) shl 8) or (data[21].toInt() and 0xFF)
+            // DNS payload starts after IP header (20) + UDP header (8) = 28 bytes
             val dnsData = data.copyOfRange(28, len)
 
-            val dnsServerAddr = InetAddress.getByName(dnsServer)
-            val packet = DatagramPacket(dnsData, dnsData.size, dnsServerAddr, dnsPort)
-            dnsSocket.send(packet)
+            // Build TCP frame: 2-byte length (big-endian) + DNS data
+            val tcpFrame = ByteBuffer.allocate(2 + dnsData.size)
+            tcpFrame.order(ByteOrder.BIG_ENDIAN)
+            tcpFrame.putShort(dnsData.size.toShort())
+            tcpFrame.put(dnsData)
 
-            dnsSocket.soTimeout = 5000
-            val responseBuffer = ByteArray(4096)
-            val responsePacket = DatagramPacket(responseBuffer, responseBuffer.size)
-            dnsSocket.receive(responsePacket)
+            // Send DNS query over TCP via the SSH socket
+            sshOutput.write(tcpFrame.array())
+            sshOutput.flush()
+            LogManager.addLog("[DNS] Sent TCP query (${dnsData.size} bytes)")
 
-            val responseData = responsePacket.data.copyOf(responsePacket.length)
+            // Read the TCP response from the SSH socket
+            // First 2 bytes = response length
+            val lenBuffer = ByteArray(2)
+            var read = 0
+            while (read < 2) {
+                val n = tunnelSocket.getInputStream().read(lenBuffer, read, 2 - read)
+                if (n < 0) throw Exception("EOF reading length")
+                read += n
+            }
+            val responseLen = ByteBuffer.wrap(lenBuffer).order(ByteOrder.BIG_ENDIAN).getShort().toInt()
+            if (responseLen <= 0 || responseLen > 4096) {
+                LogManager.addLog("[DNS] Invalid response length: $responseLen")
+                return
+            }
+
+            val responseData = ByteArray(responseLen)
+            read = 0
+            while (read < responseLen) {
+                val n = tunnelSocket.getInputStream().read(responseData, read, responseLen - read)
+                if (n < 0) throw Exception("EOF reading response")
+                read += n
+            }
+
+            // Build UDP response packet (IP header + UDP header + DNS response)
             val outPacket = buildUdpResponsePacket(srcIp, srcPort, responseData)
             tunOutput.write(outPacket)
             tunOutput.flush()
-            LogManager.addLog("[DNS] Forwarded query, response size: ${responseData.size} bytes")
+            LogManager.addLog("[DNS] Received TCP response (${responseData.size} bytes)")
+
         } catch (e: Exception) {
             LogManager.addLog("[DNS] Error: ${e.message}")
         }
     }
 
+    // Build a UDP response packet: IP header + UDP header + DNS data
     private fun buildUdpResponsePacket(
-        destIp: ByteArray,
-        destPort: Int,
+        destIp: ByteArray,  // original source IP (now destination for the response)
+        destPort: Int,      // original source port
         dnsResponse: ByteArray
     ): ByteArray {
         val totalLen = 20 + 8 + dnsResponse.size
         val buffer = ByteBuffer.allocate(totalLen)
         buffer.order(ByteOrder.BIG_ENDIAN)
 
+        // ----- IP HEADER (20 bytes) -----
         buffer.put(0x45.toByte())
         buffer.put(0.toByte())
         buffer.putShort(totalLen.toShort())
@@ -161,23 +197,28 @@ class TrafficRouter(
         buffer.put(64.toByte())
         buffer.put(17.toByte())
         buffer.putShort(0)
+        // Source IP (the DNS server) – we set it to the configured DNS server
         val dnsServerIp = InetAddress.getByName(dnsServer).address
         buffer.put(dnsServerIp)
         buffer.put(destIp)
 
-        buffer.putShort(53.toShort())
-        buffer.putShort(destPort.toShort())
+        // ----- UDP HEADER (8 bytes) -----
+        buffer.putShort(53.toShort())          // Source port (DNS)
+        buffer.putShort(destPort.toShort())    // Destination port (client)
         buffer.putShort((8 + dnsResponse.size).toShort())
-        buffer.putShort(0)
+        buffer.putShort(0)                     // UDP checksum (optional)
 
+        // ----- DNS PAYLOAD -----
         buffer.put(dnsResponse)
+
         return buffer.array()
     }
 
     fun stop() {
         LogManager.addLog("TrafficRouter stop() called")
         isRunning = false
-        try { dnsSocket.close() } catch (_: Exception) { }
-        try { tunnelSocket.close() } catch (_: Exception) { }
+        try {
+            tunnelSocket.close()
+        } catch (_: Exception) { }
     }
 }
