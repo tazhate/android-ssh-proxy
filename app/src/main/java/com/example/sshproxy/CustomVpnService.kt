@@ -201,7 +201,7 @@ class CustomVpnService : VpnService() {
                     LogManager.addLog("Connecting via proxy: $proxyHost:$proxyPort")
                     proxyHost
                 } else {
-                    LogManager.addLog("Connecting directly to: $sshHost:$sshPort")
+                    LogManager.addLog("Connecting directly to: $sshHost:$sshPort (proxy NOT set)")
                     sshHost
                 }
                 val proxyPortNumber = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) {
