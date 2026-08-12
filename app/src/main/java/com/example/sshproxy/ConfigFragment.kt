@@ -27,12 +27,13 @@ class ConfigFragment : Fragment() {
     private lateinit var proxyInput: EditText
     private lateinit var payloadInput: EditText
     private lateinit var splitDelayInput: EditText
-    private lateinit var dnsInput: EditText
+    private lateinit var dnsPrimaryInput: EditText
+    private lateinit var dnsSecondaryInput: EditText
     private lateinit var pingTargetInput: EditText
     private lateinit var enableCompressionCheck: CheckBox
     private lateinit var alwaysReconnectCheck: CheckBox
     private lateinit var followRedirectsCheck: CheckBox
-    private lateinit var proxySslCheck: CheckBox   // NEW
+    private lateinit var proxySslCheck: CheckBox
     private lateinit var mtuInput: EditText
     private lateinit var sendBufferInput: EditText
     private lateinit var receiveBufferInput: EditText
@@ -50,12 +51,13 @@ class ConfigFragment : Fragment() {
     private var currentProxyPort: String = ""
     private var currentPayload: String = ""
     private var currentSplitDelay: Int = 500
-    private var currentDnsServer: String = "1.1.1.1"
+    private var currentDnsPrimary: String = "1.1.1.1"
+    private var currentDnsSecondary: String = "1.0.0.1"
     private var currentPingTarget: String = "1.1.1.1"
     private var currentEnableCompression: Boolean = true
     private var currentAlwaysReconnect: Boolean = false
     private var currentFollowRedirects: Boolean = true
-    private var currentProxySsl: Boolean = false   // NEW
+    private var currentProxySsl: Boolean = false
     private var currentMtu: Int = 1500
     private var currentSendBuffer: Int = 16384
     private var currentReceiveBuffer: Int = 32768
@@ -82,12 +84,7 @@ class ConfigFragment : Fragment() {
                         toggleButton.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
                         updateStatus("Disconnected", android.R.color.holo_red_dark)
                     }
-                    "IDLE", "CONNECTING", "RECONNECTING", "DISCONNECTING", "ERROR" -> {
-                        updateStatus(status, android.R.color.holo_orange_dark)
-                    }
-                    else -> {
-                        updateStatus(status, android.R.color.holo_orange_dark)
-                    }
+                    else -> updateStatus(status, android.R.color.holo_orange_dark)
                 }
             }
         }
@@ -100,12 +97,13 @@ class ConfigFragment : Fragment() {
         proxyInput = view.findViewById(R.id.proxyInput)
         payloadInput = view.findViewById(R.id.payloadInput)
         splitDelayInput = view.findViewById(R.id.splitDelayInput)
-        dnsInput = view.findViewById(R.id.dnsInput)
+        dnsPrimaryInput = view.findViewById(R.id.dnsPrimaryInput)
+        dnsSecondaryInput = view.findViewById(R.id.dnsSecondaryInput)
         pingTargetInput = view.findViewById(R.id.pingTargetInput)
         enableCompressionCheck = view.findViewById(R.id.enableCompressionCheck)
         alwaysReconnectCheck = view.findViewById(R.id.alwaysReconnectCheck)
         followRedirectsCheck = view.findViewById(R.id.followRedirectsCheck)
-        proxySslCheck = view.findViewById(R.id.proxySslCheck)   // NEW
+        proxySslCheck = view.findViewById(R.id.proxySslCheck)
         mtuInput = view.findViewById(R.id.mtuInput)
         sendBufferInput = view.findViewById(R.id.sendBufferInput)
         receiveBufferInput = view.findViewById(R.id.receiveBufferInput)
@@ -136,11 +134,8 @@ class ConfigFragment : Fragment() {
         loadSavedConfig()
 
         toggleButton.setOnClickListener {
-            if (toggleButton.text == "Connect") {
-                connectAction()
-            } else {
-                disconnectAction()
-            }
+            if (toggleButton.text == "Connect") connectAction()
+            else disconnectAction()
         }
 
         LocalBroadcastManager.getInstance(requireContext()).registerReceiver(statusReceiver, IntentFilter("VPN_STATUS"))
@@ -153,12 +148,13 @@ class ConfigFragment : Fragment() {
         var proxyString = proxyInput.text.toString().trim()
         val payload = payloadInput.text.toString().trim()
         val splitDelay = splitDelayInput.text.toString().toIntOrNull() ?: 500
-        val dnsServer = dnsInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.1.1.1"
+        val dnsPrimary = dnsPrimaryInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.1.1.1"
+        val dnsSecondary = dnsSecondaryInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.0.0.1"
         val pingTarget = pingTargetInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.1.1.1"
         val enableCompression = enableCompressionCheck.isChecked
         val alwaysReconnect = alwaysReconnectCheck.isChecked
         val followRedirects = followRedirectsCheck.isChecked
-        val proxySsl = proxySslCheck.isChecked   // NEW
+        val proxySsl = proxySslCheck.isChecked
         val mtu = mtuInput.text.toString().toIntOrNull() ?: 1500
         val sendBuffer = sendBufferInput.text.toString().toIntOrNull() ?: 16384
         val receiveBuffer = receiveBufferInput.text.toString().toIntOrNull() ?: 32768
@@ -191,7 +187,8 @@ class ConfigFragment : Fragment() {
             proxyInput = proxyString,
             payload = payload,
             splitDelay = splitDelay,
-            dnsServer = dnsServer,
+            dnsPrimary = dnsPrimary,
+            dnsSecondary = dnsSecondary,
             pingTarget = pingTarget,
             enableCompression = enableCompression,
             alwaysReconnect = alwaysReconnect,
@@ -202,7 +199,7 @@ class ConfigFragment : Fragment() {
             pingUrl = pingUrl,
             pingInterval = pingInterval,
             pingTimeout = pingTimeout,
-            proxySsl = proxySsl   // NEW
+            proxySsl = proxySsl
         )
 
         if (!configManager.validateConfig(config)) {
@@ -212,8 +209,10 @@ class ConfigFragment : Fragment() {
         }
 
         repository.saveConfig(
-            sshDetails, proxyString, payload, splitDelay, dnsServer, pingTarget,
-            enableCompression, mtu, sendBuffer, receiveBuffer, pingUrl, pingInterval, pingTimeout,
+            sshDetails, proxyString, payload, splitDelay,
+            dnsPrimary, dnsSecondary, pingTarget,
+            enableCompression, mtu, sendBuffer, receiveBuffer,
+            pingUrl, pingInterval, pingTimeout,
             alwaysReconnect, followRedirects
         )
         configManager.saveConfig(config)
@@ -221,19 +220,9 @@ class ConfigFragment : Fragment() {
         LogManager.clearLogs()
         LogManager.addLog("[Config] SSH: $host:$port@$user")
         LogManager.addLog("[Config] Proxy: $proxyHost:$proxyPort (decoded)")
-        LogManager.addLog("[Config] SSL Proxy: $proxySsl")
-        LogManager.addLog("[Config] DNS Server: $dnsServer")
-        LogManager.addLog("[Config] Split Delay: ${splitDelay}ms")
-        LogManager.addLog("[Config] Compression: $enableCompression")
-        LogManager.addLog("[Config] Always Reconnect: $alwaysReconnect")
-        LogManager.addLog("[Config] Follow Redirects: $followRedirects")
+        LogManager.addLog("[Config] DNS: $dnsPrimary / $dnsSecondary")
+        LogManager.addLog("[Config] SSL: $proxySsl")
         LogManager.addLog("[Config] MTU: $mtu")
-        LogManager.addLog("[Config] Send Buffer: $sendBuffer")
-        LogManager.addLog("[Config] Receive Buffer: $receiveBuffer")
-        LogManager.addLog("[Config] Ping URL: $pingUrl")
-        LogManager.addLog("[Config] Ping Interval: ${pingInterval}ms")
-        LogManager.addLog("[Config] Ping Timeout: ${pingTimeout}ms")
-        LogManager.addLog("[Config] Payload: ${if (payload.length > 50) payload.substring(0, 50) + "..." else payload}")
         LogManager.addLog("[INFO] Connect button pressed")
 
         updateStatus("Requesting VPN permission...", android.R.color.holo_orange_dark)
@@ -246,7 +235,8 @@ class ConfigFragment : Fragment() {
         currentProxyPort = proxyPort.toString()
         currentPayload = payload
         currentSplitDelay = splitDelay
-        currentDnsServer = dnsServer
+        currentDnsPrimary = dnsPrimary
+        currentDnsSecondary = dnsSecondary
         currentPingTarget = pingTarget
         currentEnableCompression = enableCompression
         currentAlwaysReconnect = alwaysReconnect
@@ -267,7 +257,6 @@ class ConfigFragment : Fragment() {
         toggleButton.text = "Connect"
         toggleButton.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
         updateStatus("Disconnecting...", android.R.color.holo_orange_dark)
-
         stopVpnService()
 
         Handler(Looper.getMainLooper()).postDelayed({
@@ -286,12 +275,13 @@ class ConfigFragment : Fragment() {
             proxyInput.setText(config.proxyInput)
             payloadInput.setText(config.payload)
             splitDelayInput.setText(config.splitDelay.toString())
-            dnsInput.setText(config.dnsServer)
+            dnsPrimaryInput.setText(config.dnsPrimary)
+            dnsSecondaryInput.setText(config.dnsSecondary)
             pingTargetInput.setText(config.pingTarget)
             enableCompressionCheck.isChecked = config.enableCompression
             alwaysReconnectCheck.isChecked = config.alwaysReconnect
             followRedirectsCheck.isChecked = config.followRedirects
-            proxySslCheck.isChecked = config.proxySsl   // NEW
+            proxySslCheck.isChecked = config.proxySsl
             mtuInput.setText(config.mtu.toString())
             sendBufferInput.setText(config.sendBuffer.toString())
             receiveBufferInput.setText(config.receiveBuffer.toString())
@@ -308,12 +298,12 @@ class ConfigFragment : Fragment() {
                 proxyInput.setText(entity.proxyInput)
                 payloadInput.setText(entity.payload)
                 splitDelayInput.setText(entity.splitDelay.toString())
-                dnsInput.setText(entity.dnsServer)
+                dnsPrimaryInput.setText("1.1.1.1")
+                dnsSecondaryInput.setText("1.0.0.1")
                 pingTargetInput.setText(entity.pingTarget)
                 enableCompressionCheck.isChecked = entity.enableCompression
                 alwaysReconnectCheck.isChecked = entity.alwaysReconnect
                 followRedirectsCheck.isChecked = entity.followRedirects
-                // proxySsl not in Room yet – default to false
                 proxySslCheck.isChecked = false
                 mtuInput.setText(entity.mtu.toString())
                 sendBufferInput.setText(entity.sendBuffer.toString())
@@ -333,7 +323,8 @@ class ConfigFragment : Fragment() {
         proxyInput.setText("viton.com:80")
         payloadInput.setText("GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf][crlf]")
         splitDelayInput.setText("500")
-        dnsInput.setText("1.1.1.1")
+        dnsPrimaryInput.setText("1.1.1.1")
+        dnsSecondaryInput.setText("1.0.0.1")
         pingTargetInput.setText("1.1.1.1")
         enableCompressionCheck.isChecked = true
         alwaysReconnectCheck.isChecked = false
@@ -366,12 +357,10 @@ class ConfigFragment : Fragment() {
     private fun parseProxyString(input: String): Pair<String, Int>? {
         val clean = input.replace(Regex("[\\s\\p{Cntrl}]"), "")
         if (clean.isEmpty()) return null
-
         if (!clean.matches(Regex("^[a-zA-Z0-9.:-]+$"))) {
             LogManager.addLog("[ProxyParser] Invalid characters in proxy '$clean' – treating as empty")
             return null
         }
-
         try {
             val decoded = android.util.Base64.decode(clean, android.util.Base64.DEFAULT)
             val decodedStr = String(decoded).trim()
@@ -385,12 +374,9 @@ class ConfigFragment : Fragment() {
                 }
             }
         } catch (_: Exception) { /* not Base64 */ }
-
         val parts = clean.split(":")
         return when (parts.size) {
-            1 -> {
-                if (parts[0].isNotEmpty()) Pair(parts[0], 80) else null
-            }
+            1 -> if (parts[0].isNotEmpty()) Pair(parts[0], 80) else null
             2 -> {
                 val host = parts[0]
                 val port = parts[1].toIntOrNull()
@@ -404,11 +390,8 @@ class ConfigFragment : Fragment() {
 
     private fun requestVpnPermission() {
         val intent = VpnService.prepare(requireContext())
-        if (intent != null) {
-            startActivityForResult(intent, VPN_REQUEST_CODE)
-        } else {
-            startVpnService()
-        }
+        if (intent != null) startActivityForResult(intent, VPN_REQUEST_CODE)
+        else startVpnService()
     }
 
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
@@ -426,46 +409,47 @@ class ConfigFragment : Fragment() {
     }
 
     private fun startVpnService() {
-        LogManager.addLog("[DEBUG] Sending sshHost='$currentSshHost', sshPort='$currentSshPort'")
         LogManager.addLog("[DEBUG] Sending proxyHost='$currentProxyHost', proxyPort='$currentProxyPort'")
 
-        val intent = Intent(requireContext(), CustomVpnService::class.java)
-        intent.action = CustomVpnService.ACTION_CONNECT
-        intent.putExtra("sshHost", currentSshHost)
-        intent.putExtra("sshPort", currentSshPort)
-        intent.putExtra("sshUser", currentSshUser)
-        intent.putExtra("sshPass", currentSshPass)
-        intent.putExtra("proxyHost", currentProxyHost)
-
-        val intent = Intent(requireContext(), CustomVpnService::class.java)
-        intent.action = CustomVpnService.ACTION_CONNECT
-        intent.putExtra("sshHost", currentSshHost)
-        intent.putExtra("sshPort", currentSshPort)
-        intent.putExtra("sshUser", currentSshUser)
-        intent.putExtra("sshPass", currentSshPass)
-        intent.putExtra("proxyHost", currentProxyHost)
-        intent.putExtra("proxyPort", currentProxyPort)
-        intent.putExtra("payload", currentPayload)
-        intent.putExtra("splitDelay", currentSplitDelay)
-        intent.putExtra("dnsServer", currentDnsServer)
-        intent.putExtra("pingTarget", currentPingTarget)
-        intent.putExtra("enableCompression", currentEnableCompression)
-        intent.putExtra("alwaysReconnect", currentAlwaysReconnect)
-        intent.putExtra("followRedirects", currentFollowRedirects)
-        intent.putExtra("proxySsl", currentProxySsl)   // NEW
-        intent.putExtra("mtu", currentMtu)
-        intent.putExtra("sendBuffer", currentSendBuffer)
-        intent.putExtra("receiveBuffer", currentReceiveBuffer)
-        intent.putExtra("pingUrl", currentPingUrl)
-        intent.putExtra("pingInterval", currentPingInterval)
-        intent.putExtra("pingTimeout", currentPingTimeout)
-        requireContext().startService(intent)
+        val serviceIntent = Intent(requireContext(), CustomVpnService::class.java)
+        serviceIntent.action = CustomVpnService.ACTION_CONNECT
+        serviceIntent.putExtra("sshHost", currentSshHost)
+        serviceIntent.putExtra("sshPort", currentSshPort)
+        serviceIntent.putExtra("sshUser", currentSshUser)
+        serviceIntent.putExtra("sshPass", currentSshPass)
+        serviceIntent.putExtra("proxyHost", currentProxyHost)
+        serviceIntent.putExtra("proxyPort", currentProxyPort)
+        serviceIntent.putExtra("payload", currentPayload)
+        serviceIntent.putExtra("splitDelay", currentSplitDelay)
+        serviceIntent.putExtra("dnsPrimary", currentDnsPrimary)
+        serviceIntent.putExtra("dnsSecondary", currentDnsSecondary)
+        serviceIntent.putExtra("pingTarget", currentPingTarget)
+        serviceIntent.putExtra("enableCompression", currentEnableCompression)
+        serviceIntent.putExtra("alwaysReconnect", currentAlwaysReconnect)
+        serviceIntent.putExtra("followRedirects", currentFollowRedirects)
+        serviceIntent.putExtra("proxyPort", currentProxyPort)
+        serviceIntent.putExtra("payload", currentPayload)
+        serviceIntent.putExtra("splitDelay", currentSplitDelay)
+        serviceIntent.putExtra("dnsPrimary", currentDnsPrimary)
+        serviceIntent.putExtra("dnsSecondary", currentDnsSecondary)
+        serviceIntent.putExtra("pingTarget", currentPingTarget)
+        serviceIntent.putExtra("enableCompression", currentEnableCompression)
+        serviceIntent.putExtra("alwaysReconnect", currentAlwaysReconnect)
+        serviceIntent.putExtra("followRedirects", currentFollowRedirects)
+        serviceIntent.putExtra("proxySsl", currentProxySsl)
+        serviceIntent.putExtra("mtu", currentMtu)
+        serviceIntent.putExtra("sendBuffer", currentSendBuffer)
+        serviceIntent.putExtra("receiveBuffer", currentReceiveBuffer)
+        serviceIntent.putExtra("pingUrl", currentPingUrl)
+        serviceIntent.putExtra("pingInterval", currentPingInterval)
+        serviceIntent.putExtra("pingTimeout", currentPingTimeout)
+        requireContext().startService(serviceIntent)
     }
 
     private fun stopVpnService() {
-        val intent = Intent(requireContext(), CustomVpnService::class.java)
-        intent.action = CustomVpnService.ACTION_DISCONNECT
-        requireContext().startService(intent)
+        val serviceIntent = Intent(requireContext(), CustomVpnService::class.java)
+        serviceIntent.action = CustomVpnService.ACTION_DISCONNECT
+        requireContext().startService(serviceIntent)
     }
 
     fun updateStatus(status: String, colorId: Int) {
