@@ -20,7 +20,6 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import kotlinx.coroutines.runBlocking
 
 class ConfigFragment : Fragment() {
 
@@ -113,7 +112,7 @@ class ConfigFragment : Fragment() {
         toggleButton = view.findViewById(R.id.toggleButton)
         statusText = view.findViewById(R.id.statusText)
 
-        // Proxy input sanitisation
+        // ---- Proxy input sanitisation ----
         proxyInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -148,7 +147,7 @@ class ConfigFragment : Fragment() {
 
     private fun connectAction() {
         val sshDetails = sshDetailsInput.text.toString().trim()
-        val proxyString = proxyInput.text.toString().trim()
+        var proxyString = proxyInput.text.toString().trim()
         val payload = payloadInput.text.toString().trim()
         val splitDelay = splitDelayInput.text.toString().toIntOrNull() ?: 500
         val dnsServer = dnsInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.1.1.1"
@@ -163,7 +162,14 @@ class ConfigFragment : Fragment() {
         val pingInterval = pingIntervalInput.text.toString().toIntOrNull() ?: 2000
         val pingTimeout = pingTimeoutInput.text.toString().toIntOrNull() ?: 5000
 
-        LogManager.addLog("[DEBUG] Raw proxy input: '$proxyString'")
+        // --- DEBUG: log raw proxy ---
+        LogManager.addLog("[DEBUG] Raw proxy input: '$proxyString' (length: ${proxyString.length})")
+        // If it looks like garbage, reset to empty
+        if (proxyString.isNotEmpty() && !proxyString.matches(Regex("^[a-zA-Z0-9.:-]+$"))) {
+            LogManager.addLog("[WARN] Proxy contains invalid characters – resetting to empty")
+            proxyString = ""
+            proxyInput.setText("")
+        }
 
         val parseResult = parseSshDetails(sshDetails)
         if (parseResult == null) {
@@ -348,35 +354,63 @@ class ConfigFragment : Fragment() {
         return Quadruple(host, port, user, pass)
     }
 
+    // ---- ULTRA ROBUST proxy parser ----
     private fun parseProxyString(input: String): Pair<String, Int>? {
         val clean = input.replace(Regex("[\\s\\p{Cntrl}]"), "")
-        if (clean.isEmpty()) return null
+        if (clean.isEmpty()) {
+            LogManager.addLog("[ProxyParser] Empty or whitespace-only proxy – using direct connection")
+            return null
+        }
 
+        // Reject strings that don't look like a valid host:port (allow letters, digits, dots, hyphens, colon)
+        if (!clean.matches(Regex("^[a-zA-Z0-9.:-]+$"))) {
+            LogManager.addLog("[ProxyParser] Invalid characters in proxy '$clean' – treating as empty")
+            return null
+        }
+
+        // Try Base64 decode (if it decodes to a valid host:port)
         try {
             val decoded = android.util.Base64.decode(clean, android.util.Base64.DEFAULT)
             val decodedStr = String(decoded).trim()
-            if (decodedStr.isNotEmpty()) {
+            if (decodedStr.isNotEmpty() && decodedStr.matches(Regex("^[a-zA-Z0-9.:-]+$"))) {
                 val parts = decodedStr.split(":")
                 val host = parts[0]
                 val port = parts.getOrElse(1) { "80" }.toIntOrNull() ?: 80
-                return Pair(host, port)
+                if (host.isNotEmpty() && port in 1..65535) {
+                    LogManager.addLog("[ProxyParser] Decoded Base64 proxy: '$host:$port'")
+                    return Pair(host, port)
+                }
             }
-        } catch (_: Exception) { /* fall through */ }
+        } catch (_: Exception) { /* not Base64 */ }
 
+        // Plain host:port or host
         val parts = clean.split(":")
         return when (parts.size) {
-            1 -> Pair(parts[0], 80)
-            2 -> {
-                val port = parts[1].toIntOrNull()
-                if (port != null && port in 1..65535) Pair(parts[0], port) else null
+            1 -> {
+                if (parts[0].isNotEmpty()) {
+                    LogManager.addLog("[ProxyParser] Using host '$host' with default port 80")
+                    Pair(parts[0], 80)
+                } else null
             }
-            else -> null
+            2 -> {
+                val host = parts[0]
+                val port = parts[1].toIntOrNull()
+                if (host.isNotEmpty() && port != null && port in 1..65535) {
+                    LogManager.addLog("[ProxyParser] Using host '$host' port $port")
+                    Pair(host, port)
+                } else {
+                    LogManager.addLog("[ProxyParser] Invalid port in '$clean' – treating as empty")
+                    null
+                }
+            }
+            else -> {
+                LogManager.addLog("[ProxyParser] Too many parts in '$clean' – invalid")
+                null
+            }
         }
     }
 
     private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
-
-    // Test function removed to avoid XML dependency and suspend issues
 
     private fun requestVpnPermission() {
         val intent = VpnService.prepare(requireContext())
