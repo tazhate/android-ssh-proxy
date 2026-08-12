@@ -8,9 +8,6 @@ import java.net.Socket
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
-/**
- * Efficient packet router with buffer pooling and proper thread management.
- */
 class TrafficRouter(
     private val tunFileDescriptor: FileDescriptor,
     private val tunnelSocket: Socket,
@@ -22,12 +19,10 @@ class TrafficRouter(
     private var writeThread: Thread? = null
     private val keepAliveInterval = 3000L
 
-    // Buffer pooling
     private val bufferPool = ConcurrentLinkedQueue<ByteArray>()
     private val poolSize = 10
 
     init {
-        // Pre-allocate buffers
         repeat(poolSize) {
             bufferPool.add(ByteArray(receiveBufferSize))
         }
@@ -40,23 +35,18 @@ class TrafficRouter(
             tunnelSocket.tcpNoDelay = true
             tunnelSocket.keepAlive = true
 
-            readThread = Thread {
-                readFromTunnel()
-            }
-            writeThread = Thread {
-                writeToTunnel()
-            }
+            readThread = Thread { readFromTunnel() }
+            writeThread = Thread { writeToTunnel() }
 
             readThread?.start()
             writeThread?.start()
 
-            // Keep-alive thread
             Thread {
                 while (isRunning.get()) {
                     try {
                         Thread.sleep(keepAliveInterval)
                         if (isRunning.get() && tunnelSocket.isConnected && !tunnelSocket.isClosed) {
-                            tunnelSocket.getOutputStream().write(32) // space char
+                            tunnelSocket.getOutputStream().write(32)
                             tunnelSocket.getOutputStream().flush()
                         }
                     } catch (_: Exception) { /* ignore */ }
@@ -90,7 +80,6 @@ class TrafficRouter(
                 }
                 break
             } finally {
-                // Ensure buffer is released even on exception
                 if (buffer != null) releaseBuffer(buffer)
             }
         }
@@ -132,7 +121,6 @@ class TrafficRouter(
         if (bufferPool.size < poolSize) {
             bufferPool.add(buffer)
         }
-        // Otherwise discard; we have enough buffers
     }
 
     fun stop() {
