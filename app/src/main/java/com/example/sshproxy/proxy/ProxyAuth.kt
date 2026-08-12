@@ -1,4 +1,6 @@
 package com.example.sshproxy.proxy
 
-class ProxyConnectionException(message: String, cause: Throwable? = null) :
-    Exception(message, cause)
+data class ProxyAuth(
+    val username: String,
+    val password: String
+)
