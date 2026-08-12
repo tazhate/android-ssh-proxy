@@ -16,9 +16,9 @@ class ConfigManager(private val context: Context) {
         val proxyInput: String,
         val payload: String,
         val splitDelay: Int,
-        val dnsPrimary: String,           // NEW
-        val dnsSecondary: String,         // NEW
-        val pingTarget: String,
+        val dnsPrimary: String,
+        val dnsSecondary: String,
+        val pingTarget: String, // kept for compatibility, but not used in UI
         val enableCompression: Boolean,
         val alwaysReconnect: Boolean,
         val followRedirects: Boolean,
