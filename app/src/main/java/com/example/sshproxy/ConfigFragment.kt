@@ -32,6 +32,7 @@ class ConfigFragment : Fragment() {
     private lateinit var enableCompressionCheck: CheckBox
     private lateinit var alwaysReconnectCheck: CheckBox
     private lateinit var followRedirectsCheck: CheckBox
+    private lateinit var proxySslCheck: CheckBox   // NEW
     private lateinit var mtuInput: EditText
     private lateinit var sendBufferInput: EditText
     private lateinit var receiveBufferInput: EditText
@@ -54,6 +55,7 @@ class ConfigFragment : Fragment() {
     private var currentEnableCompression: Boolean = true
     private var currentAlwaysReconnect: Boolean = false
     private var currentFollowRedirects: Boolean = true
+    private var currentProxySsl: Boolean = false   // NEW
     private var currentMtu: Int = 1500
     private var currentSendBuffer: Int = 16384
     private var currentReceiveBuffer: Int = 32768
@@ -103,6 +105,7 @@ class ConfigFragment : Fragment() {
         enableCompressionCheck = view.findViewById(R.id.enableCompressionCheck)
         alwaysReconnectCheck = view.findViewById(R.id.alwaysReconnectCheck)
         followRedirectsCheck = view.findViewById(R.id.followRedirectsCheck)
+        proxySslCheck = view.findViewById(R.id.proxySslCheck)   // NEW
         mtuInput = view.findViewById(R.id.mtuInput)
         sendBufferInput = view.findViewById(R.id.sendBufferInput)
         receiveBufferInput = view.findViewById(R.id.receiveBufferInput)
@@ -112,7 +115,7 @@ class ConfigFragment : Fragment() {
         toggleButton = view.findViewById(R.id.toggleButton)
         statusText = view.findViewById(R.id.statusText)
 
-        // ---- Proxy input sanitisation ----
+        // Proxy input sanitisation
         proxyInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -155,6 +158,7 @@ class ConfigFragment : Fragment() {
         val enableCompression = enableCompressionCheck.isChecked
         val alwaysReconnect = alwaysReconnectCheck.isChecked
         val followRedirects = followRedirectsCheck.isChecked
+        val proxySsl = proxySslCheck.isChecked   // NEW
         val mtu = mtuInput.text.toString().toIntOrNull() ?: 1500
         val sendBuffer = sendBufferInput.text.toString().toIntOrNull() ?: 16384
         val receiveBuffer = receiveBufferInput.text.toString().toIntOrNull() ?: 32768
@@ -162,9 +166,7 @@ class ConfigFragment : Fragment() {
         val pingInterval = pingIntervalInput.text.toString().toIntOrNull() ?: 2000
         val pingTimeout = pingTimeoutInput.text.toString().toIntOrNull() ?: 5000
 
-        // --- DEBUG: log raw proxy ---
-        LogManager.addLog("[DEBUG] Raw proxy input: '$proxyString' (length: ${proxyString.length})")
-        // If it looks like garbage, reset to empty
+        LogManager.addLog("[DEBUG] Raw proxy input: '$proxyString'")
         if (proxyString.isNotEmpty() && !proxyString.matches(Regex("^[a-zA-Z0-9.:-]+$"))) {
             LogManager.addLog("[WARN] Proxy contains invalid characters – resetting to empty")
             proxyString = ""
@@ -199,7 +201,8 @@ class ConfigFragment : Fragment() {
             receiveBuffer = receiveBuffer,
             pingUrl = pingUrl,
             pingInterval = pingInterval,
-            pingTimeout = pingTimeout
+            pingTimeout = pingTimeout,
+            proxySsl = proxySsl   // NEW
         )
 
         if (!configManager.validateConfig(config)) {
@@ -218,6 +221,7 @@ class ConfigFragment : Fragment() {
         LogManager.clearLogs()
         LogManager.addLog("[Config] SSH: $host:$port@$user")
         LogManager.addLog("[Config] Proxy: $proxyHost:$proxyPort (decoded)")
+        LogManager.addLog("[Config] SSL Proxy: $proxySsl")
         LogManager.addLog("[Config] DNS Server: $dnsServer")
         LogManager.addLog("[Config] Split Delay: ${splitDelay}ms")
         LogManager.addLog("[Config] Compression: $enableCompression")
@@ -247,6 +251,7 @@ class ConfigFragment : Fragment() {
         currentEnableCompression = enableCompression
         currentAlwaysReconnect = alwaysReconnect
         currentFollowRedirects = followRedirects
+        currentProxySsl = proxySsl
         currentMtu = mtu
         currentSendBuffer = sendBuffer
         currentReceiveBuffer = receiveBuffer
@@ -286,6 +291,7 @@ class ConfigFragment : Fragment() {
             enableCompressionCheck.isChecked = config.enableCompression
             alwaysReconnectCheck.isChecked = config.alwaysReconnect
             followRedirectsCheck.isChecked = config.followRedirects
+            proxySslCheck.isChecked = config.proxySsl   // NEW
             mtuInput.setText(config.mtu.toString())
             sendBufferInput.setText(config.sendBuffer.toString())
             receiveBufferInput.setText(config.receiveBuffer.toString())
@@ -307,6 +313,8 @@ class ConfigFragment : Fragment() {
                 enableCompressionCheck.isChecked = entity.enableCompression
                 alwaysReconnectCheck.isChecked = entity.alwaysReconnect
                 followRedirectsCheck.isChecked = entity.followRedirects
+                // proxySsl not in Room yet – default to false
+                proxySslCheck.isChecked = false
                 mtuInput.setText(entity.mtu.toString())
                 sendBufferInput.setText(entity.sendBuffer.toString())
                 receiveBufferInput.setText(entity.receiveBuffer.toString())
@@ -330,6 +338,7 @@ class ConfigFragment : Fragment() {
         enableCompressionCheck.isChecked = true
         alwaysReconnectCheck.isChecked = false
         followRedirectsCheck.isChecked = true
+        proxySslCheck.isChecked = false
         mtuInput.setText("1500")
         sendBufferInput.setText("16384")
         receiveBufferInput.setText("32768")
@@ -354,21 +363,15 @@ class ConfigFragment : Fragment() {
         return Quadruple(host, port, user, pass)
     }
 
-    // ---- ULTRA ROBUST proxy parser ----
     private fun parseProxyString(input: String): Pair<String, Int>? {
         val clean = input.replace(Regex("[\\s\\p{Cntrl}]"), "")
-        if (clean.isEmpty()) {
-            LogManager.addLog("[ProxyParser] Empty or whitespace-only proxy – using direct connection")
-            return null
-        }
+        if (clean.isEmpty()) return null
 
-        // Reject strings that don't look like a valid host:port (allow letters, digits, dots, hyphens, colon)
         if (!clean.matches(Regex("^[a-zA-Z0-9.:-]+$"))) {
             LogManager.addLog("[ProxyParser] Invalid characters in proxy '$clean' – treating as empty")
             return null
         }
 
-        // Try Base64 decode (if it decodes to a valid host:port)
         try {
             val decoded = android.util.Base64.decode(clean, android.util.Base64.DEFAULT)
             val decodedStr = String(decoded).trim()
@@ -383,30 +386,17 @@ class ConfigFragment : Fragment() {
             }
         } catch (_: Exception) { /* not Base64 */ }
 
-        // Plain host:port or host
         val parts = clean.split(":")
         return when (parts.size) {
             1 -> {
-                if (parts[0].isNotEmpty()) {
-                    LogManager.addLog("[ProxyParser] Using host '$host' with default port 80")
-                    Pair(parts[0], 80)
-                } else null
+                if (parts[0].isNotEmpty()) Pair(parts[0], 80) else null
             }
             2 -> {
                 val host = parts[0]
                 val port = parts[1].toIntOrNull()
-                if (host.isNotEmpty() && port != null && port in 1..65535) {
-                    LogManager.addLog("[ProxyParser] Using host '$host' port $port")
-                    Pair(host, port)
-                } else {
-                    LogManager.addLog("[ProxyParser] Invalid port in '$clean' – treating as empty")
-                    null
-                }
+                if (host.isNotEmpty() && port != null && port in 1..65535) Pair(host, port) else null
             }
-            else -> {
-                LogManager.addLog("[ProxyParser] Too many parts in '$clean' – invalid")
-                null
-            }
+            else -> null
         }
     }
 
@@ -446,6 +436,14 @@ class ConfigFragment : Fragment() {
         intent.putExtra("sshUser", currentSshUser)
         intent.putExtra("sshPass", currentSshPass)
         intent.putExtra("proxyHost", currentProxyHost)
+
+        val intent = Intent(requireContext(), CustomVpnService::class.java)
+        intent.action = CustomVpnService.ACTION_CONNECT
+        intent.putExtra("sshHost", currentSshHost)
+        intent.putExtra("sshPort", currentSshPort)
+        intent.putExtra("sshUser", currentSshUser)
+        intent.putExtra("sshPass", currentSshPass)
+        intent.putExtra("proxyHost", currentProxyHost)
         intent.putExtra("proxyPort", currentProxyPort)
         intent.putExtra("payload", currentPayload)
         intent.putExtra("splitDelay", currentSplitDelay)
@@ -454,6 +452,7 @@ class ConfigFragment : Fragment() {
         intent.putExtra("enableCompression", currentEnableCompression)
         intent.putExtra("alwaysReconnect", currentAlwaysReconnect)
         intent.putExtra("followRedirects", currentFollowRedirects)
+        intent.putExtra("proxySsl", currentProxySsl)   // NEW
         intent.putExtra("mtu", currentMtu)
         intent.putExtra("sendBuffer", currentSendBuffer)
         intent.putExtra("receiveBuffer", currentReceiveBuffer)
