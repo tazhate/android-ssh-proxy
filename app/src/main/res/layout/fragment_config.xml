@@ -14,7 +14,7 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="HTTP Custom Clone"
+            android:text="Gtunnel"
             android:textSize="24sp"
             android:textStyle="bold"
             android:gravity="center"
@@ -42,7 +42,7 @@
             android:background="@android:drawable/editbox_background"
             android:layout_marginTop="4dp" />
 
-        <!-- Remote Proxy (single field) -->
+        <!-- Remote Proxy -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -63,7 +63,7 @@
             android:background="@android:drawable/editbox_background"
             android:layout_marginTop="4dp" />
 
-        <!-- Custom Payload -->
+        <!-- Payload -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -106,49 +106,47 @@
             android:background="@android:drawable/editbox_background"
             android:layout_marginTop="4dp" />
 
-        <!-- DNS Server -->
+        <!-- DNS Primary -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="DNS Server"
+            android:text="DNS Primary"
             android:textStyle="bold"
             android:textSize="14sp"
             android:textColor="#666666"
             android:layout_marginTop="16dp" />
 
         <EditText
-            android:id="@+id/dnsInput"
+            android:id="@+id/dnsPrimaryInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="e.g., 1.1.1.1"
+            android:hint="Primary DNS"
             android:inputType="textUri"
             android:text="1.1.1.1"
             android:padding="12dp"
             android:background="@android:drawable/editbox_background"
             android:layout_marginTop="4dp" />
 
-        <!-- Ping Target (deprecated, hidden) -->
+        <!-- DNS Secondary -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Ping Target (deprecated)"
+            android:text="DNS Secondary"
             android:textStyle="bold"
             android:textSize="14sp"
             android:textColor="#666666"
-            android:layout_marginTop="16dp"
-            android:visibility="gone" />
+            android:layout_marginTop="8dp" />
 
         <EditText
-            android:id="@+id/pingTargetInput"
+            android:id="@+id/dnsSecondaryInput"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:hint="e.g., 1.1.1.1 or google.com"
+            android:hint="Secondary DNS"
             android:inputType="textUri"
-            android:text="1.1.1.1"
+            android:text="1.0.0.1"
             android:padding="12dp"
             android:background="@android:drawable/editbox_background"
-            android:layout_marginTop="4dp"
-            android:visibility="gone" />
+            android:layout_marginTop="4dp" />
 
         <!-- Advanced Settings -->
         <TextView
@@ -180,8 +178,16 @@
             android:id="@+id/followRedirectsCheck"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="Follow HTTP Redirects (301, 302, 303, 307)"
+            android:text="Follow HTTP Redirects"
             android:checked="true"
+            android:layout_marginTop="8dp" />
+
+        <CheckBox
+            android:id="@+id/proxySslCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Use SSL for SSH Tunnel"
+            android:checked="false"
             android:layout_marginTop="8dp" />
 
         <!-- MTU -->
