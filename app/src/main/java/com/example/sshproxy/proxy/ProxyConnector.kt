@@ -21,22 +21,27 @@ class ProxyConnector {
         payload: String = "",
         userAgent: String = "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36",
         auth: ProxyAuth? = null,
-        connectTimeout: Int = 15000,
-        readTimeout: Int = 15000,
+        connectTimeout: Int = 25000,
+        readTimeout: Int = 5000,   // 5s to get proxy response
         followRedirects: Boolean = false,
         splitDelayMs: Long = 500,
-        useSsl: Boolean = false
+        useSsl: Boolean = false,
+        directFallback: Boolean = false
     ): Socket {
         require(proxyHost.isNotEmpty() && proxyPort in 1..65535) { "Invalid proxy address" }
         require(sshHost.isNotEmpty() && sshPort in 1..65535) { "Invalid SSH target" }
 
-        LogManager.addLog("[ProxyConnector] Connecting to proxy $proxyHost:$proxyPort" +
-                if (useSsl) " (SSL enabled)" else "")
+        // If directFallback, connect to SSH host directly; otherwise to proxy host.
+        val targetHost = if (directFallback) sshHost else proxyHost
+        val targetPort = if (directFallback) sshPort else proxyPort
+
+        LogManager.addLog("[ProxyConnector] Connecting to ${if (directFallback) "SSH host directly" else "proxy"} $targetHost:$targetPort" +
+                if (useSsl) " (SSL)" else "")
 
         val socket: Socket = if (useSsl) {
             try {
                 val factory = SSLSocketFactory.getDefault()
-                val sslSocket = factory.createSocket(proxyHost, proxyPort) as SSLSocket
+                val sslSocket = factory.createSocket(targetHost, targetPort) as SSLSocket
                 sslSocket.startHandshake()
                 sslSocket
             } catch (e: Exception) {
@@ -48,19 +53,20 @@ class ProxyConnector {
 
         try {
             if (!useSsl) {
-                socket.connect(InetSocketAddress(proxyHost, proxyPort), connectTimeout)
+                socket.connect(InetSocketAddress(targetHost, targetPort), connectTimeout)
             }
             socket.soTimeout = readTimeout
             socket.tcpNoDelay = true
             socket.keepAlive = true
         } catch (e: Exception) {
             socket.close()
-            throw ProxyConnectionException("Failed to connect to proxy $proxyHost:$proxyPort", e)
+            throw ProxyConnectionException("Failed to connect to $targetHost:$targetPort", e)
         }
 
         val output = socket.getOutputStream()
         val input = socket.getInputStream()
 
+        // Build CONNECT request – always to the SSH host
         val connectRequest = buildConnectRequest(sshHost, sshPort, auth)
         LogManager.addLog("[ProxyConnector] Sending CONNECT request:\n$connectRequest")
         output.write(connectRequest.toByteArray())
@@ -70,6 +76,7 @@ class ProxyConnector {
         val responseLine = reader.readLine() ?: throw ProxyConnectionException("Empty response from proxy")
         LogManager.addLog("[ProxyConnector] Proxy response: $responseLine")
 
+        // Handle redirects if enabled
         if (followRedirects && (responseLine.contains("301") || responseLine.contains("302") ||
                 responseLine.contains("303") || responseLine.contains("307"))) {
             val location = extractLocation(reader)
@@ -81,11 +88,12 @@ class ProxyConnector {
                 socket.close()
                 return connectViaProxy(
                     newHost, newPort, sshHost, sshPort, payload, userAgent, auth,
-                    connectTimeout, readTimeout, followRedirects, splitDelayMs, useSsl
+                    connectTimeout, readTimeout, followRedirects, splitDelayMs, useSsl, directFallback
                 )
             }
         }
 
+        // Check if CONNECT succeeded (2xx, 3xx, 101, or "Connection established")
         val isSuccess = responseLine.startsWith("HTTP/1.1 2") ||
                 responseLine.startsWith("HTTP/1.1 3") ||
                 responseLine.contains("101") ||
@@ -103,15 +111,19 @@ class ProxyConnector {
             throw ProxyConnectionException("Proxy rejected connection: $responseLine")
         }
 
+        // Drain HTTP headers
         drainHttpHeaders(reader)
 
+        // Inject payload
         if (payload.isNotEmpty()) {
             LogManager.addLog("[ProxyConnector] Injecting payload")
+            // Build proxy string for [proxy] replacement
+            val proxyString = if (directFallback) "$proxyHost:$proxyPort" else "$targetHost:$targetPort"
             val processedPayload = PayloadProcessor.processPayload(
                 payload,
                 sshHost,
                 sshPort.toString(),
-                "$proxyHost:$proxyPort",
+                proxyString,
                 userAgent
             )
             val parts = PayloadProcessor.splitPayload(processedPayload)
