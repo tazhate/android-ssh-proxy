@@ -78,6 +78,7 @@ class CustomVpnService : VpnService() {
     private var alwaysReconnect: Boolean = false
     private var followRedirects: Boolean = true
     private var proxySsl: Boolean = false
+    private var proxySpoofOnly: Boolean = false
     private var mtu: Int = 1500
     private var sendBuffer: Int = 16384
     private var receiveBuffer: Int = 32768
@@ -131,6 +132,7 @@ class CustomVpnService : VpnService() {
         alwaysReconnect = intent.getBooleanExtra("alwaysReconnect", false)
         followRedirects = intent.getBooleanExtra("followRedirects", true)
         proxySsl = intent.getBooleanExtra("proxySsl", false)
+        proxySpoofOnly = intent.getBooleanExtra("proxySpoofOnly", false)
         mtu = intent.getIntExtra("mtu", 1500)
         sendBuffer = intent.getIntExtra("sendBuffer", 16384)
         receiveBuffer = intent.getIntExtra("receiveBuffer", 32768)
@@ -211,23 +213,54 @@ class CustomVpnService : VpnService() {
 
     private suspend fun doConnect(compressionFailed: Boolean) {
         val connector = ProxyConnector()
-        val socket = connector.connectViaProxy(
-            proxyHost = proxyHost.ifEmpty { sshHost },
-            proxyPort = if (proxyPort.isNotEmpty()) proxyPort.toInt() else sshPort.toInt(),
-            sshHost = sshHost,
-            sshPort = sshPort.toInt(),
-            payload = payload,
-            userAgent = "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36",
-            auth = null,
-            connectTimeout = 25000,
-            readTimeout = 25000,
-            followRedirects = followRedirects,
-            splitDelayMs = splitDelayMs.toLong(),
-            useSsl = proxySsl
-        )
+        var socket: Socket
+        var directFallback = proxySpoofOnly  // if user forced it, start with direct
+
+        try {
+            // First attempt: normal proxy mode
+            socket = connector.connectViaProxy(
+                proxyHost = proxyHost.ifEmpty { sshHost },
+                proxyPort = if (proxyPort.isNotEmpty()) proxyPort.toInt() else sshPort.toInt(),
+                sshHost = sshHost,
+                sshPort = sshPort.toInt(),
+                payload = payload,
+                userAgent = "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36",
+                auth = null,
+                connectTimeout = 25000,
+                readTimeout = 5000,   // 5s response timeout
+                followRedirects = followRedirects,
+                splitDelayMs = splitDelayMs.toLong(),
+                useSsl = proxySsl,
+                directFallback = directFallback
+            )
+        } catch (e: ProxyConnectionException) {
+            val msg = e.message ?: ""
+            // If it's a timeout, 400, or any proxy error, and we haven't tried direct fallback yet
+            if (!proxySpoofOnly && (msg.contains("timeout") || msg.contains("400") || msg.contains("Bad Request"))) {
+                LogManager.addLog("[FALLBACK] Proxy failed ($msg). Retrying with direct connection + spoofed Host...")
+                directFallback = true
+                socket = connector.connectViaProxy(
+                    proxyHost = proxyHost,
+                    proxyPort = if (proxyPort.isNotEmpty()) proxyPort.toInt() else sshPort.toInt(),
+                    sshHost = sshHost,
+                    sshPort = sshPort.toInt(),
+                    payload = payload,
+                    userAgent = "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36",
+                    auth = null,
+                    connectTimeout = 25000,
+                    readTimeout = 5000,
+                    followRedirects = followRedirects,
+                    splitDelayMs = splitDelayMs.toLong(),
+                    useSsl = proxySsl,
+                    directFallback = true
+                )
+            } else {
+                throw e
+            }
+        }
 
         tunnelSocket = socket
-        LogManager.addLog("connected to socket ${socket.remoteSocketAddress}")
+        LogManager.addLog("connected to socket ${socket.remoteSocketAddress} (directFallback=$directFallback)")
 
         establishSSH(compressionFailed)
 
