@@ -19,19 +19,28 @@ import kotlinx.coroutines.launch
 class LogsFragment : Fragment() {
 
     private lateinit var logText: TextView
-    private lateinit var copyFab: FloatingActionButton
-    private lateinit var shareFab: FloatingActionButton
+    private var copyFab: FloatingActionButton? = null
+    private var shareFab: FloatingActionButton? = null
 
     override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
         val view = inflater.inflate(R.layout.fragment_logs, container, false)
 
         logText = view.findViewById(R.id.logText)
-        copyFab = view.findViewById(R.id.copyLogsButton)
-        shareFab = view.findViewById(R.id.shareLogsButton)
 
-        copyFab.setOnClickListener { copyLogs() }
-        shareFab.setOnClickListener { shareLogs() }
-        logText.setOnLongClickListener { copyLogs(); true }
+        try {
+            copyFab = view.findViewById(R.id.copyLogsButton)
+            shareFab = view.findViewById(R.id.shareLogsButton)
+
+            copyFab?.setOnClickListener { copyLogs() }
+            shareFab?.setOnClickListener { shareLogs() }
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+
+        logText.setOnLongClickListener {
+            copyLogs()
+            true
+        }
 
         lifecycleScope.launch {
             while (true) {
