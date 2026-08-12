@@ -25,7 +25,7 @@ class ProxyConnector {
         readTimeout: Int = 15000,
         followRedirects: Boolean = false,
         splitDelayMs: Long = 500,
-        useSsl: Boolean = false  // NEW: enable SSL/TLS for proxy
+        useSsl: Boolean = false
     ): Socket {
         require(proxyHost.isNotEmpty() && proxyPort in 1..65535) { "Invalid proxy address" }
         require(sshHost.isNotEmpty() && sshPort in 1..65535) { "Invalid SSH target" }
@@ -33,7 +33,6 @@ class ProxyConnector {
         LogManager.addLog("[ProxyConnector] Connecting to proxy $proxyHost:$proxyPort" +
                 if (useSsl) " (SSL enabled)" else "")
 
-        // ---- Create socket (plain or SSL) ----
         val socket: Socket = if (useSsl) {
             try {
                 val factory = SSLSocketFactory.getDefault()
@@ -62,7 +61,6 @@ class ProxyConnector {
         val output = socket.getOutputStream()
         val input = socket.getInputStream()
 
-        // ---- CONNECT request ----
         val connectRequest = buildConnectRequest(sshHost, sshPort, auth)
         LogManager.addLog("[ProxyConnector] Sending CONNECT request:\n$connectRequest")
         output.write(connectRequest.toByteArray())
@@ -72,7 +70,6 @@ class ProxyConnector {
         val responseLine = reader.readLine() ?: throw ProxyConnectionException("Empty response from proxy")
         LogManager.addLog("[ProxyConnector] Proxy response: $responseLine")
 
-        // Handle redirects if enabled
         if (followRedirects && (responseLine.contains("301") || responseLine.contains("302") ||
                 responseLine.contains("303") || responseLine.contains("307"))) {
             val location = extractLocation(reader)
@@ -89,7 +86,6 @@ class ProxyConnector {
             }
         }
 
-        // Check if CONNECT succeeded (2xx, 3xx, 101, or "Connection established")
         val isSuccess = responseLine.startsWith("HTTP/1.1 2") ||
                 responseLine.startsWith("HTTP/1.1 3") ||
                 responseLine.contains("101") ||
@@ -107,10 +103,8 @@ class ProxyConnector {
             throw ProxyConnectionException("Proxy rejected connection: $responseLine")
         }
 
-        // Drain HTTP headers
         drainHttpHeaders(reader)
 
-        // Inject custom payload if provided
         if (payload.isNotEmpty()) {
             LogManager.addLog("[ProxyConnector] Injecting payload")
             val processedPayload = PayloadProcessor.processPayload(
