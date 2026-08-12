@@ -6,6 +6,8 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.Socket
+import javax.net.ssl.SSLSocket
+import javax.net.ssl.SSLSocketFactory
 import java.util.Base64
 
 class ProxyConnector {
@@ -22,27 +24,45 @@ class ProxyConnector {
         connectTimeout: Int = 15000,
         readTimeout: Int = 15000,
         followRedirects: Boolean = false,
-        splitDelayMs: Long = 500
+        splitDelayMs: Long = 500,
+        useSsl: Boolean = false  // NEW: enable SSL/TLS for proxy
     ): Socket {
         require(proxyHost.isNotEmpty() && proxyPort in 1..65535) { "Invalid proxy address" }
         require(sshHost.isNotEmpty() && sshPort in 1..65535) { "Invalid SSH target" }
 
-        LogManager.addLog("[ProxyConnector] Connecting to proxy $proxyHost:$proxyPort")
+        LogManager.addLog("[ProxyConnector] Connecting to proxy $proxyHost:$proxyPort" +
+                if (useSsl) " (SSL enabled)" else "")
 
-        val socket = Socket()
+        // ---- Create socket (plain or SSL) ----
+        val socket: Socket = if (useSsl) {
+            try {
+                val factory = SSLSocketFactory.getDefault()
+                val sslSocket = factory.createSocket(proxyHost, proxyPort) as SSLSocket
+                sslSocket.startHandshake()
+                sslSocket
+            } catch (e: Exception) {
+                throw ProxyConnectionException("SSL handshake failed: ${e.message}", e)
+            }
+        } else {
+            Socket()
+        }
+
         try {
-            socket.connect(InetSocketAddress(proxyHost, proxyPort), connectTimeout)
+            if (!useSsl) {
+                socket.connect(InetSocketAddress(proxyHost, proxyPort), connectTimeout)
+            }
             socket.soTimeout = readTimeout
             socket.tcpNoDelay = true
             socket.keepAlive = true
         } catch (e: Exception) {
+            socket.close()
             throw ProxyConnectionException("Failed to connect to proxy $proxyHost:$proxyPort", e)
         }
 
         val output = socket.getOutputStream()
         val input = socket.getInputStream()
 
-        // ---- Correct CONNECT request ----
+        // ---- CONNECT request ----
         val connectRequest = buildConnectRequest(sshHost, sshPort, auth)
         LogManager.addLog("[ProxyConnector] Sending CONNECT request:\n$connectRequest")
         output.write(connectRequest.toByteArray())
@@ -64,7 +84,7 @@ class ProxyConnector {
                 socket.close()
                 return connectViaProxy(
                     newHost, newPort, sshHost, sshPort, payload, userAgent, auth,
-                    connectTimeout, readTimeout, followRedirects, splitDelayMs
+                    connectTimeout, readTimeout, followRedirects, splitDelayMs, useSsl
                 )
             }
         }
@@ -126,7 +146,7 @@ class ProxyConnector {
             val encoded = Base64.getEncoder().encodeToString(credentials.toByteArray())
             sb.append("Proxy-Authorization: Basic $encoded\r\n")
         }
-        sb.append("\r\n")  // Mandatory empty line
+        sb.append("\r\n")
         return sb.toString()
     }
 
