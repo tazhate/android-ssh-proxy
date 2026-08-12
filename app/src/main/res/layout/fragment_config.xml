@@ -10,7 +10,6 @@
         android:layout_height="wrap_content"
         android:orientation="vertical">
 
-        <!-- App Title -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -42,7 +41,7 @@
             android:background="@android:drawable/editbox_background"
             android:layout_marginTop="4dp" />
 
-        <!-- Remote Proxy -->
+        <!-- Proxy -->
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -187,6 +186,14 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="Use SSL for SSH Tunnel"
+            android:checked="false"
+            android:layout_marginTop="8dp" />
+
+        <CheckBox
+            android:id="@+id/proxySpoofOnlyCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Use proxy as spoofed host (bypass proxy IP)"
             android:checked="false"
             android:layout_marginTop="8dp" />
 
