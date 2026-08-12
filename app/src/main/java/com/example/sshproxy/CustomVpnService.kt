@@ -214,10 +214,10 @@ class CustomVpnService : VpnService() {
     private suspend fun doConnect(compressionFailed: Boolean) {
         val connector = ProxyConnector()
         var socket: Socket
-        var directFallback = proxySpoofOnly  // if user forced it, start with direct
+        var directFallback = proxySpoofOnly
 
         try {
-            // First attempt: normal proxy mode
+            // First attempt: normal proxy mode (CONNECT request)
             socket = connector.connectViaProxy(
                 proxyHost = proxyHost.ifEmpty { sshHost },
                 proxyPort = if (proxyPort.isNotEmpty()) proxyPort.toInt() else sshPort.toInt(),
@@ -227,17 +227,17 @@ class CustomVpnService : VpnService() {
                 userAgent = "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36",
                 auth = null,
                 connectTimeout = 25000,
-                readTimeout = 5000,   // 5s response timeout
+                readTimeout = 5000,
                 followRedirects = followRedirects,
                 splitDelayMs = splitDelayMs.toLong(),
                 useSsl = proxySsl,
-                directFallback = directFallback
+                directFallback = false
             )
         } catch (e: ProxyConnectionException) {
             val msg = e.message ?: ""
-            // If it's a timeout, 400, or any proxy error, and we haven't tried direct fallback yet
+            // If proxy fails (timeout, 400, or any error) and we haven't tried direct fallback yet
             if (!proxySpoofOnly && (msg.contains("timeout") || msg.contains("400") || msg.contains("Bad Request"))) {
-                LogManager.addLog("[FALLBACK] Proxy failed ($msg). Retrying with direct connection + spoofed Host...")
+                LogManager.addLog("[FALLBACK] Proxy failed ($msg). Retrying with direct connection + spoofed payload...")
                 directFallback = true
                 socket = connector.connectViaProxy(
                     proxyHost = proxyHost,
@@ -262,6 +262,7 @@ class CustomVpnService : VpnService() {
         tunnelSocket = socket
         LogManager.addLog("connected to socket ${socket.remoteSocketAddress} (directFallback=$directFallback)")
 
+        // Establish SSH (the socket is now either a proxied tunnel or raw direct)
         establishSSH(compressionFailed)
 
         isConnected.set(true)
