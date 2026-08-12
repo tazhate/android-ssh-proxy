@@ -28,7 +28,7 @@ import java.io.InputStreamReader
 class ConfigFragment : Fragment() {
 
     private lateinit var sshDetailsInput: EditText
-    private lateinit var proxyInput: EditText          // SINGLE field
+    private lateinit var proxyInput: EditText
     private lateinit var payloadInput: EditText
     private lateinit var splitDelayInput: EditText
     private lateinit var dnsInput: EditText
@@ -44,7 +44,7 @@ class ConfigFragment : Fragment() {
     private lateinit var pingTimeoutInput: EditText
     private lateinit var toggleButton: Button
     private lateinit var statusText: TextView
-    private lateinit var testButton: Button           // Optional test button
+    private lateinit var testButton: Button
 
     private var currentSshHost: String = ""
     private var currentSshPort: String = ""
@@ -67,7 +67,7 @@ class ConfigFragment : Fragment() {
     private var currentPingTimeout: Int = 5000
 
     private val VPN_REQUEST_CODE = 100
-    private lateinit var repository: ConfigRepository   // You can keep this or replace with ConfigManager – we'll use both for now
+    private lateinit var repository: ConfigRepository
     private lateinit var configManager: ConfigManager
 
     private val statusReceiver = object : BroadcastReceiver() {
@@ -86,7 +86,6 @@ class ConfigFragment : Fragment() {
                         updateStatus("Disconnected", android.R.color.holo_red_dark)
                     }
                     "IDLE", "CONNECTING", "RECONNECTING", "DISCONNECTING", "ERROR" -> {
-                        // update status but keep button as is
                         updateStatus(status, android.R.color.holo_orange_dark)
                     }
                     else -> {
@@ -117,9 +116,9 @@ class ConfigFragment : Fragment() {
         pingTimeoutInput = view.findViewById(R.id.pingTimeoutInput)
         toggleButton = view.findViewById(R.id.toggleButton)
         statusText = view.findViewById(R.id.statusText)
-        testButton = view.findViewById(R.id.testProxyButton) // if you add it
+        testButton = view.findViewById(R.id.testProxyButton)
 
-        // ---- UI Sanitization for proxy input ----
+        // Proxy input sanitisation
         proxyInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -134,8 +133,8 @@ class ConfigFragment : Fragment() {
             }
         })
 
-        repository = ConfigRepository(requireContext())   // Existing Room repo – keep for backward compatibility
-        configManager = ConfigManager(requireContext())   // New ConfigManager for persistence
+        repository = ConfigRepository(requireContext())
+        configManager = ConfigManager(requireContext())
 
         loadSavedConfig()
 
@@ -147,7 +146,6 @@ class ConfigFragment : Fragment() {
             }
         }
 
-        // Optional test button
         testButton.setOnClickListener {
             testProxyConnector()
         }
@@ -185,12 +183,10 @@ class ConfigFragment : Fragment() {
 
         val (host, port, user, pass) = parseResult
 
-        // Parse proxy using robust parser
         val proxyPair = parseProxyString(proxyString)
         val (proxyHost, proxyPort) = proxyPair ?: Pair("", 0)
         LogManager.addLog("[DEBUG] Decoded proxy: '$proxyHost:$proxyPort'")
 
-        // Build config object for validation and saving
         val config = ConfigManager.TunnelConfig(
             sshDetails = sshDetails,
             proxyInput = proxyString,
@@ -209,14 +205,12 @@ class ConfigFragment : Fragment() {
             pingTimeout = pingTimeout
         )
 
-        // Validate config before connecting
         if (!configManager.validateConfig(config)) {
             LogManager.addLog("[ERROR] Invalid config – please check fields")
             updateStatus("Invalid config", android.R.color.holo_red_dark)
             return
         }
 
-        // Save config (both to Room for backward compatibility and to ConfigManager)
         repository.saveConfig(
             sshDetails, proxyString, payload, splitDelay, dnsServer, pingTarget,
             enableCompression, mtu, sendBuffer, receiveBuffer, pingUrl, pingInterval, pingTimeout,
@@ -284,7 +278,6 @@ class ConfigFragment : Fragment() {
     }
 
     private fun loadSavedConfig() {
-        // First try ConfigManager (new)
         val config = configManager.loadConfig()
         if (config != null) {
             sshDetailsInput.setText(config.sshDetails)
@@ -306,7 +299,6 @@ class ConfigFragment : Fragment() {
             return
         }
 
-        // Fallback to Room repository (old method)
         repository.loadLatestConfig { entity ->
             if (entity != null) {
                 sshDetailsInput.setText(entity.sshDetails)
@@ -326,28 +318,30 @@ class ConfigFragment : Fragment() {
                 pingTimeoutInput.setText(entity.pingTimeout.toString())
                 LogManager.addLog("[Config] Loaded from Room (legacy)")
             } else {
-                // Set defaults
-                sshDetailsInput.setText("premium.rickydewizard.site:80@Rickydewizard:apps")
-                proxyInput.setText("viton.com:80")
-                payloadInput.setText("GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf][crlf]")
-                splitDelayInput.setText("500")
-                dnsInput.setText("1.1.1.1")
-                pingTargetInput.setText("1.1.1.1")
-                enableCompressionCheck.isChecked = true
-                alwaysReconnectCheck.isChecked = false
-                followRedirectsCheck.isChecked = true
-                mtuInput.setText("1500")
-                sendBufferInput.setText("16384")
-                receiveBufferInput.setText("32768")
-                pingUrlInput.setText("https://dns.google")
-                pingIntervalInput.setText("2000")
-                pingTimeoutInput.setText("5000")
-                LogManager.addLog("[Config] Using defaults")
+                setDefaultConfig()
             }
         }
     }
 
-    // ---- Robust SSH parser ----
+    private fun setDefaultConfig() {
+        sshDetailsInput.setText("premium.rickydewizard.site:80@Rickydewizard:apps")
+        proxyInput.setText("viton.com:80")
+        payloadInput.setText("GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf][crlf]")
+        splitDelayInput.setText("500")
+        dnsInput.setText("1.1.1.1")
+        pingTargetInput.setText("1.1.1.1")
+        enableCompressionCheck.isChecked = true
+        alwaysReconnectCheck.isChecked = false
+        followRedirectsCheck.isChecked = true
+        mtuInput.setText("1500")
+        sendBufferInput.setText("16384")
+        receiveBufferInput.setText("32768")
+        pingUrlInput.setText("https://dns.google")
+        pingIntervalInput.setText("2000")
+        pingTimeoutInput.setText("5000")
+        LogManager.addLog("[Config] Using defaults")
+    }
+
     private fun parseSshDetails(input: String): Quadruple<String, String, String, String>? {
         val atIndex = input.indexOf('@')
         if (atIndex == -1) return null
@@ -363,12 +357,10 @@ class ConfigFragment : Fragment() {
         return Quadruple(host, port, user, pass)
     }
 
-    // ---- Robust proxy parser ----
     private fun parseProxyString(input: String): Pair<String, Int>? {
         val clean = input.replace(Regex("[\\s\\p{Cntrl}]"), "")
         if (clean.isEmpty()) return null
 
-        // Try Base64 first
         try {
             val decoded = android.util.Base64.decode(clean, android.util.Base64.DEFAULT)
             val decodedStr = String(decoded).trim()
@@ -380,7 +372,6 @@ class ConfigFragment : Fragment() {
             }
         } catch (_: Exception) { /* fall through */ }
 
-        // Plain host:port or host
         val parts = clean.split(":")
         return when (parts.size) {
             1 -> Pair(parts[0], 80)
@@ -394,7 +385,6 @@ class ConfigFragment : Fragment() {
 
     private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
-    // ---- Test Proxy Connector (Optional) ----
     private fun testProxyConnector() {
         val sshDetails = sshDetailsInput.text.toString().trim()
         val proxyString = proxyInput.text.toString().trim()
@@ -406,7 +396,7 @@ class ConfigFragment : Fragment() {
             LogManager.addLog("[Test] Invalid SSH details")
             return
         }
-        val (host, port, user, pass) = parseResult
+        val (host, port, _, _) = parseResult
 
         val proxyPair = parseProxyString(proxyString)
         if (proxyPair == null) {
@@ -436,4 +426,96 @@ class ConfigFragment : Fragment() {
 
                 if (socket.isConnected) {
                     LogManager.addLog("[Test] ✅ Proxy connected! Socket is ready for SSH.")
-              
+                    try {
+                        socket.soTimeout = 5000
+                        val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
+                        val banner = reader.readLine()
+                        if (banner?.contains("SSH") == true) {
+                            LogManager.addLog("[Test] ✅ SSH banner received: $banner")
+                        } else {
+                            LogManager.addLog("[Test] ⚠️ No SSH banner (response: $banner)")
+                        }
+                    } catch (e: Exception) {
+                        LogManager.addLog("[Test] ⚠️ Could not read SSH banner: ${e.message}")
+                    }
+                    socket.close()
+                } else {
+                    LogManager.addLog("[Test] ❌ Socket not connected after handshake")
+                }
+            } catch (e: ProxyConnectionException) {
+                LogManager.addLog("[Test] ❌ Proxy failed: {e.message}")
+            } catch (e: Exception) {
+                LogManager.addLog("[Test] ❌ Unexpected error: ${e.message}")
+            }
+        }.start()
+    }
+
+    private fun requestVpnPermission() {
+        val intent = VpnService.prepare(requireContext())
+        if (intent != null) {
+            startActivityForResult(intent, VPN_REQUEST_CODE)
+        } else {
+            startVpnService()
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == VPN_REQUEST_CODE) {
+            if (resultCode == android.app.Activity.RESULT_OK) {
+                startVpnService()
+            } else {
+                LogManager.addLog("[ERROR] VPN permission denied")
+                updateStatus("VPN permission denied", android.R.color.holo_red_dark)
+                toggleButton.text = "Connect"
+                toggleButton.setBackgroundColor(ContextCompat.getColor(requireContext(), android.R.color.holo_green_dark))
+            }
+        }
+    }
+
+    private fun startVpnService() {
+        LogManager.addLog("[DEBUG] Sending sshHost='$currentSshHost', sshPort='$currentSshPort'")
+        LogManager.addLog("[DEBUG] Sending proxyHost='$currentProxyHost', proxyPort='$currentProxyPort'")
+
+        val intent = Intent(requireContext(), CustomVpnService::class.java)
+        intent.action = CustomVpnService.ACTION_CONNECT
+        intent.putExtra("sshHost", currentSshHost)
+        intent.putExtra("sshPort", currentSshPort)
+        intent.putExtra("sshUser", currentSshUser)
+        intent.putExtra("sshPass", currentSshPass)
+        intent.putExtra("proxyHost", currentProxyHost)
+        intent.putExtra("proxyPort", currentProxyPort)
+        intent.putExtra("payload", currentPayload)
+        intent.putExtra("splitDelay", currentSplitDelay)
+        intent.putExtra("dnsServer", currentDnsServer)
+        intent.putExtra("pingTarget", currentPingTarget)
+        intent.putExtra("enableCompression", currentEnableCompression)
+        intent.putExtra("alwaysReconnect", currentAlwaysReconnect)
+        intent.putExtra("followRedirects", currentFollowRedirects)
+        intent.putExtra("mtu", currentMtu)
+        intent.putExtra("sendBuffer", currentSendBuffer)
+        intent.putExtra("receiveBuffer", currentReceiveBuffer)
+        intent.putExtra("pingUrl", currentPingUrl)
+        intent.putExtra("pingInterval", currentPingInterval)
+        intent.putExtra("pingTimeout", currentPingTimeout)
+        requireContext().startService(intent)
+    }
+
+    private fun stopVpnService() {
+        val intent = Intent(requireContext(), CustomVpnService::class.java)
+        intent.action = CustomVpnService.ACTION_DISCONNECT
+        requireContext().startService(intent)
+    }
+
+    fun updateStatus(status: String, colorId: Int) {
+        activity?.runOnUiThread {
+            statusText.text = "Status: $status"
+            statusText.setTextColor(ContextCompat.getColor(requireContext(), colorId))
+        }
+    }
+
+    override fun onDestroyView() {
+        super.onDestroyView()
+        LocalBroadcastManager.getInstance(requireContext()).unregisterReceiver(statusReceiver)
+    }
+}
