@@ -58,7 +58,6 @@ class CustomVpnService : VpnService() {
     private var stateJob: Job? = null
     private var wakeLock: PowerManager.WakeLock? = null
 
-    // Reconnection tracking
     private var reconnectAttempts = 0
     private val MAX_RECONNECT_ATTEMPTS = 10
     private val BASE_RECONNECT_DELAY_MS = 2000L
@@ -72,11 +71,13 @@ class CustomVpnService : VpnService() {
     private var proxyPort: String = ""
     private var payload: String = ""
     private var splitDelayMs: Int = 500
-    private var dnsServer: String = "1.1.1.1"
+    private var dnsPrimary: String = "1.1.1.1"
+    private var dnsSecondary: String = "1.0.0.1"
     private var pingTarget: String = "1.1.1.1"
     private var enableCompression: Boolean = true
     private var alwaysReconnect: Boolean = false
     private var followRedirects: Boolean = true
+    private var proxySsl: Boolean = false
     private var mtu: Int = 1500
     private var sendBuffer: Int = 16384
     private var receiveBuffer: Int = 32768
@@ -123,11 +124,13 @@ class CustomVpnService : VpnService() {
         proxyPort = intent.getStringExtra("proxyPort") ?: ""
         payload = intent.getStringExtra("payload") ?: ""
         splitDelayMs = intent.getIntExtra("splitDelay", 500)
-        dnsServer = intent.getStringExtra("dnsServer") ?: "1.1.1.1"
+        dnsPrimary = intent.getStringExtra("dnsPrimary") ?: "1.1.1.1"
+        dnsSecondary = intent.getStringExtra("dnsSecondary") ?: "1.0.0.1"
         pingTarget = intent.getStringExtra("pingTarget") ?: "1.1.1.1"
         enableCompression = intent.getBooleanExtra("enableCompression", true)
         alwaysReconnect = intent.getBooleanExtra("alwaysReconnect", false)
         followRedirects = intent.getBooleanExtra("followRedirects", true)
+        proxySsl = intent.getBooleanExtra("proxySsl", false)
         mtu = intent.getIntExtra("mtu", 1500)
         sendBuffer = intent.getIntExtra("sendBuffer", 16384)
         receiveBuffer = intent.getIntExtra("receiveBuffer", 32768)
@@ -136,7 +139,7 @@ class CustomVpnService : VpnService() {
         pingTimeout = intent.getIntExtra("pingTimeout", 5000)
     }
 
-    // ---------- Connect / Disconnect / Reconnect ----------
+    // ---------- Connect ----------
     private fun connect() {
         if (_state.value == VpnState.CONNECTING || _state.value == VpnState.CONNECTED) {
             LogManager.addLog("[WARN] Already connecting or connected")
@@ -155,7 +158,6 @@ class CustomVpnService : VpnService() {
         LogManager.addLog("starting service")
         LogManager.addLog("ssh starting")
 
-        // ---- Retry loop with host rotation ----
         CoroutineScope(Dispatchers.IO).launch {
             var attempts = 0
             val maxAttempts = 10
@@ -164,15 +166,12 @@ class CustomVpnService : VpnService() {
             while (attempts < maxAttempts && !isConnected.get()) {
                 try {
                     doConnect(compressionFailed)
-                    // Success – exit loop
                     return@launch
                 } catch (e: ProxyConnectionException) {
                     LogManager.addLog("[ERROR] Proxy connection failed: ${e.message}")
-                    // Rotate to next host
                     PayloadProcessor.rotateIndex++
                     attempts++
                     LogManager.addLog("Rotating to next host (attempt $attempts/$maxAttempts)")
-                    // Wait before retry
                     delay(2000)
                 } catch (e: SocketTimeoutException) {
                     LogManager.addLog("[ERROR] Socket timeout")
@@ -184,7 +183,6 @@ class CustomVpnService : VpnService() {
                         LogManager.addLog("[ERROR] Compression not supported. Disabling and retrying...")
                         compressionFailed = true
                         enableCompression = false
-                        // Retry without compression (do not rotate)
                         continue
                     } else {
                         LogManager.addLog("[ERROR] SSH failed: ${e.message}")
@@ -206,42 +204,33 @@ class CustomVpnService : VpnService() {
                 sendStatus("Disconnected")
                 showNotification("Connection failed")
                 releaseWakeLock()
-                if (alwaysReconnect) {
-                    reconnect()
-                }
+                if (alwaysReconnect) reconnect()
             }
         }
     }
 
     private suspend fun doConnect(compressionFailed: Boolean) {
-        val proxyString = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) "$proxyHost:$proxyPort" else ""
-
         val connector = ProxyConnector()
-        val socket = try {
-            connector.connectViaProxy(
-                proxyHost = proxyHost.ifEmpty { sshHost },
-                proxyPort = if (proxyPort.isNotEmpty()) proxyPort.toInt() else sshPort.toInt(),
-                sshHost = sshHost,
-                sshPort = sshPort.toInt(),
-                payload = payload,
-                userAgent = "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36",
-                auth = null,
-                connectTimeout = 25000,
-                readTimeout = 25000,
-                followRedirects = followRedirects,
-                splitDelayMs = splitDelayMs.toLong()
-            )
-        } catch (e: Exception) {
-            throw e
-        }
+        val socket = connector.connectViaProxy(
+            proxyHost = proxyHost.ifEmpty { sshHost },
+            proxyPort = if (proxyPort.isNotEmpty()) proxyPort.toInt() else sshPort.toInt(),
+            sshHost = sshHost,
+            sshPort = sshPort.toInt(),
+            payload = payload,
+            userAgent = "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36",
+            auth = null,
+            connectTimeout = 25000,
+            readTimeout = 25000,
+            followRedirects = followRedirects,
+            splitDelayMs = splitDelayMs.toLong(),
+            useSsl = proxySsl
+        )
 
         tunnelSocket = socket
         LogManager.addLog("connected to socket ${socket.remoteSocketAddress}")
 
-        // Establish SSH
         establishSSH(compressionFailed)
 
-        // Success
         isConnected.set(true)
         _state.value = VpnState.CONNECTED
         reconnectAttempts = 0
@@ -250,9 +239,7 @@ class CustomVpnService : VpnService() {
         setupVpn()
         startPing()
 
-        if (alwaysReconnect) {
-            startReconnectMonitor()
-        }
+        if (alwaysReconnect) startReconnectMonitor()
     }
 
     private fun establishSSH(compressionRetry: Boolean = false) {
@@ -273,17 +260,9 @@ class CustomVpnService : VpnService() {
         }
 
         session.setSocketFactory(object : com.jcraft.jsch.SocketFactory {
-            override fun createSocket(host: String?, port: Int): Socket {
-                return tunnelSocket ?: Socket(host, port)
-            }
-
-            override fun getInputStream(socket: Socket): java.io.InputStream {
-                return socket.getInputStream()
-            }
-
-            override fun getOutputStream(socket: Socket): java.io.OutputStream {
-                return socket.getOutputStream()
-            }
+            override fun createSocket(host: String?, port: Int): Socket = tunnelSocket ?: Socket(host, port)
+            override fun getInputStream(socket: Socket) = socket.getInputStream()
+            override fun getOutputStream(socket: Socket) = socket.getOutputStream()
         })
 
         session.connect(25000)
@@ -328,15 +307,12 @@ class CustomVpnService : VpnService() {
                 val delay = BASE_RECONNECT_DELAY_MS * (1L shl reconnectAttempts.coerceAtMost(8))
                 LogManager.addLog("Reconnect attempt ${reconnectAttempts + 1} in ${delay}ms")
                 delay(delay)
-                // Reset rotation index? No, keep rotation state.
                 connect()
-                // If connect succeeds, it will set isConnected true and exit
                 if (isConnected.get()) {
                     reconnectAttempts = 0
                     return@launch
                 }
                 reconnectAttempts++
-                LogManager.addLog("[WARN] Reconnect failed: attempt $reconnectAttempts")
             }
             if (!isConnected.get()) {
                 _state.value = VpnState.ERROR
@@ -358,8 +334,8 @@ class CustomVpnService : VpnService() {
             .addAddress("10.0.0.2", 32)
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
-            .addDnsServer(dnsServer)
-            .addDnsServer("8.8.8.8")
+            .addDnsServer(dnsPrimary)
+            .addDnsServer(dnsSecondary)
             .setSession("Gtunnel")
             .setBlocking(true)
             .setMtu(mtu)
@@ -370,7 +346,7 @@ class CustomVpnService : VpnService() {
             return
         }
 
-        LogManager.addLog("Local IP: 10.0.0.2, MTU: $mtu")
+        LogManager.addLog("Local IP: 10.0.0.2, DNS: $dnsPrimary / $dnsSecondary, MTU: $mtu")
 
         trafficRouter = TrafficRouter(
             vpnInterface!!.fileDescriptor,
@@ -463,9 +439,7 @@ class CustomVpnService : VpnService() {
 
     private fun releaseWakeLock() {
         try {
-            if (wakeLock?.isHeld == true) {
-                wakeLock?.release()
-            }
+            if (wakeLock?.isHeld == true) wakeLock?.release()
         } catch (e: Exception) {
             LogManager.addLog("[ERROR] WakeLock release failed: ${e.message}")
         }
