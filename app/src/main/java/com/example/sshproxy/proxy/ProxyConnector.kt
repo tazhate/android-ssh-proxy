@@ -42,8 +42,9 @@ class ProxyConnector {
         val output = socket.getOutputStream()
         val input = socket.getInputStream()
 
+        // ---- Correct CONNECT request ----
         val connectRequest = buildConnectRequest(sshHost, sshPort, auth)
-        LogManager.addLog("[ProxyConnector] Sending CONNECT request to $sshHost:$sshPort")
+        LogManager.addLog("[ProxyConnector] Sending CONNECT request:\n$connectRequest")
         output.write(connectRequest.toByteArray())
         output.flush()
 
@@ -51,6 +52,7 @@ class ProxyConnector {
         val responseLine = reader.readLine() ?: throw ProxyConnectionException("Empty response from proxy")
         LogManager.addLog("[ProxyConnector] Proxy response: $responseLine")
 
+        // Handle redirects if enabled
         if (followRedirects && (responseLine.contains("301") || responseLine.contains("302") ||
                 responseLine.contains("303") || responseLine.contains("307"))) {
             val location = extractLocation(reader)
@@ -67,6 +69,7 @@ class ProxyConnector {
             }
         }
 
+        // Check if CONNECT succeeded (2xx, 3xx, 101, or "Connection established")
         val isSuccess = responseLine.startsWith("HTTP/1.1 2") ||
                 responseLine.startsWith("HTTP/1.1 3") ||
                 responseLine.contains("101") ||
@@ -84,8 +87,10 @@ class ProxyConnector {
             throw ProxyConnectionException("Proxy rejected connection: $responseLine")
         }
 
+        // Drain HTTP headers
         drainHttpHeaders(reader)
 
+        // Inject custom payload if provided
         if (payload.isNotEmpty()) {
             LogManager.addLog("[ProxyConnector] Injecting payload")
             val processedPayload = PayloadProcessor.processPayload(
@@ -115,12 +120,13 @@ class ProxyConnector {
         sb.append("CONNECT $host:$port HTTP/1.1\r\n")
         sb.append("Host: $host:$port\r\n")
         sb.append("User-Agent: Mozilla/5.0\r\n")
+        sb.append("Connection: keep-alive\r\n")
         if (auth != null) {
             val credentials = "${auth.username}:${auth.password}"
             val encoded = Base64.getEncoder().encodeToString(credentials.toByteArray())
             sb.append("Proxy-Authorization: Basic $encoded\r\n")
         }
-        sb.append("\r\n")
+        sb.append("\r\n")  // Mandatory empty line
         return sb.toString()
     }
 
