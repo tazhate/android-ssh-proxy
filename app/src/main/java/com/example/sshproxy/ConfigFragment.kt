@@ -20,10 +20,7 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
-import com.example.sshproxy.proxy.ProxyConnector
-import com.example.sshproxy.proxy.ProxyConnectionException
-import java.io.BufferedReader
-import java.io.InputStreamReader
+import kotlinx.coroutines.runBlocking
 
 class ConfigFragment : Fragment() {
 
@@ -44,7 +41,6 @@ class ConfigFragment : Fragment() {
     private lateinit var pingTimeoutInput: EditText
     private lateinit var toggleButton: Button
     private lateinit var statusText: TextView
-    private lateinit var testButton: Button
 
     private var currentSshHost: String = ""
     private var currentSshPort: String = ""
@@ -116,7 +112,6 @@ class ConfigFragment : Fragment() {
         pingTimeoutInput = view.findViewById(R.id.pingTimeoutInput)
         toggleButton = view.findViewById(R.id.toggleButton)
         statusText = view.findViewById(R.id.statusText)
-        testButton = view.findViewById(R.id.testProxyButton)
 
         // Proxy input sanitisation
         proxyInput.addTextChangedListener(object : TextWatcher {
@@ -144,10 +139,6 @@ class ConfigFragment : Fragment() {
             } else {
                 disconnectAction()
             }
-        }
-
-        testButton.setOnClickListener {
-            testProxyConnector()
         }
 
         LocalBroadcastManager.getInstance(requireContext()).registerReceiver(statusReceiver, IntentFilter("VPN_STATUS"))
@@ -385,70 +376,7 @@ class ConfigFragment : Fragment() {
 
     private data class Quadruple<A, B, C, D>(val first: A, val second: B, val third: C, val fourth: D)
 
-    private fun testProxyConnector() {
-        val sshDetails = sshDetailsInput.text.toString().trim()
-        val proxyString = proxyInput.text.toString().trim()
-        val payload = payloadInput.text.toString().trim()
-        val splitDelay = splitDelayInput.text.toString().toIntOrNull() ?: 500
-
-        val parseResult = parseSshDetails(sshDetails)
-        if (parseResult == null) {
-            LogManager.addLog("[Test] Invalid SSH details")
-            return
-        }
-        val (host, port, _, _) = parseResult
-
-        val proxyPair = parseProxyString(proxyString)
-        if (proxyPair == null) {
-            LogManager.addLog("[Test] Invalid proxy")
-            return
-        }
-        val (proxyHost, proxyPort) = proxyPair
-
-        LogManager.addLog("[Test] Starting proxy connector test...")
-
-        Thread {
-            try {
-                val connector = ProxyConnector()
-                val socket = connector.connectViaProxy(
-                    proxyHost = proxyHost,
-                    proxyPort = proxyPort,
-                    sshHost = host,
-                    sshPort = port.toInt(),
-                    payload = payload,
-                    userAgent = "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36",
-                    auth = null,
-                    connectTimeout = 15000,
-                    readTimeout = 15000,
-                    followRedirects = false,
-                    splitDelayMs = splitDelay.toLong()
-                )
-
-                if (socket.isConnected) {
-                    LogManager.addLog("[Test] ✅ Proxy connected! Socket is ready for SSH.")
-                    try {
-                        socket.soTimeout = 5000
-                        val reader = BufferedReader(InputStreamReader(socket.getInputStream()))
-                        val banner = reader.readLine()
-                        if (banner?.contains("SSH") == true) {
-                            LogManager.addLog("[Test] ✅ SSH banner received: $banner")
-                        } else {
-                            LogManager.addLog("[Test] ⚠️ No SSH banner (response: $banner)")
-                        }
-                    } catch (e: Exception) {
-                        LogManager.addLog("[Test] ⚠️ Could not read SSH banner: ${e.message}")
-                    }
-                    socket.close()
-                } else {
-                    LogManager.addLog("[Test] ❌ Socket not connected after handshake")
-                }
-            } catch (e: ProxyConnectionException) {
-                LogManager.addLog("[Test] ❌ Proxy failed: {e.message}")
-            } catch (e: Exception) {
-                LogManager.addLog("[Test] ❌ Unexpected error: ${e.message}")
-            }
-        }.start()
-    }
+    // Test function removed to avoid XML dependency and suspend issues
 
     private fun requestVpnPermission() {
         val intent = VpnService.prepare(requireContext())
