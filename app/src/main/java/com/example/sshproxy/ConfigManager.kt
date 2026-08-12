@@ -18,7 +18,7 @@ class ConfigManager(private val context: Context) {
         val splitDelay: Int,
         val dnsPrimary: String,
         val dnsSecondary: String,
-        val pingTarget: String, // kept for compatibility, but not used in UI
+        val pingTarget: String,
         val enableCompression: Boolean,
         val alwaysReconnect: Boolean,
         val followRedirects: Boolean,
@@ -28,7 +28,8 @@ class ConfigManager(private val context: Context) {
         val pingUrl: String,
         val pingInterval: Int,
         val pingTimeout: Int,
-        val proxySsl: Boolean = false
+        val proxySsl: Boolean = false,
+        val proxySpoofOnly: Boolean = false
     )
 
     fun saveConfig(config: TunnelConfig) {
