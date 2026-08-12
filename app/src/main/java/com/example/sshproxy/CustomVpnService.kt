@@ -138,14 +138,14 @@ class CustomVpnService : VpnService() {
 
     // ---------- Connect / Disconnect / Reconnect ----------
     private fun connect() {
-        if (sshHost.isEmpty() || sshPort.isEmpty() || sshUser.isEmpty() || sshPass.isEmpty()) {
-            LogManager.addLog("[ERROR] Missing SSH details")
-            _state.value = VpnState.ERROR
+        if (_state.value == VpnState.CONNECTING || _state.value == VpnState.CONNECTED) {
+            LogManager.addLog("[WARN] Already connecting or connected")
             return
         }
 
-        if (_state.value == VpnState.CONNECTING || _state.value == VpnState.CONNECTED) {
-            LogManager.addLog("[WARN] Already connecting or connected")
+        if (sshHost.isEmpty() || sshPort.isEmpty() || sshUser.isEmpty() || sshPass.isEmpty()) {
+            LogManager.addLog("[ERROR] Missing SSH details")
+            _state.value = VpnState.ERROR
             return
         }
 
@@ -155,11 +155,53 @@ class CustomVpnService : VpnService() {
         LogManager.addLog("starting service")
         LogManager.addLog("ssh starting")
 
+        // ---- Retry loop with host rotation ----
         CoroutineScope(Dispatchers.IO).launch {
-            try {
-                doConnect()
-            } catch (e: Exception) {
-                LogManager.addLog("[ERROR] Connection failed: ${e.message}")
+            var attempts = 0
+            val maxAttempts = 10
+            var compressionFailed = false
+
+            while (attempts < maxAttempts && !isConnected.get()) {
+                try {
+                    doConnect(compressionFailed)
+                    // Success – exit loop
+                    return@launch
+                } catch (e: ProxyConnectionException) {
+                    LogManager.addLog("[ERROR] Proxy connection failed: ${e.message}")
+                    // Rotate to next host
+                    PayloadProcessor.rotateIndex++
+                    attempts++
+                    LogManager.addLog("Rotating to next host (attempt $attempts/$maxAttempts)")
+                    // Wait before retry
+                    delay(2000)
+                } catch (e: SocketTimeoutException) {
+                    LogManager.addLog("[ERROR] Socket timeout")
+                    PayloadProcessor.rotateIndex++
+                    attempts++
+                    delay(2000)
+                } catch (e: JSchException) {
+                    if (e.message?.contains("Algorithm negotiation") == true && !compressionFailed) {
+                        LogManager.addLog("[ERROR] Compression not supported. Disabling and retrying...")
+                        compressionFailed = true
+                        enableCompression = false
+                        // Retry without compression (do not rotate)
+                        continue
+                    } else {
+                        LogManager.addLog("[ERROR] SSH failed: ${e.message}")
+                        PayloadProcessor.rotateIndex++
+                        attempts++
+                        delay(2000)
+                    }
+                } catch (e: Exception) {
+                    LogManager.addLog("[ERROR] Connection failed: ${e.message}")
+                    PayloadProcessor.rotateIndex++
+                    attempts++
+                    delay(2000)
+                }
+            }
+
+            if (!isConnected.get()) {
+                LogManager.addLog("[ERROR] All hosts failed. Stopping service.")
                 _state.value = VpnState.ERROR
                 sendStatus("Disconnected")
                 showNotification("Connection failed")
@@ -171,9 +213,7 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    private suspend fun doConnect() {
-        var compressionFailed = false
-
+    private suspend fun doConnect(compressionFailed: Boolean) {
         val proxyString = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) "$proxyHost:$proxyPort" else ""
 
         val connector = ProxyConnector()
@@ -191,30 +231,17 @@ class CustomVpnService : VpnService() {
                 followRedirects = followRedirects,
                 splitDelayMs = splitDelayMs.toLong()
             )
-        } catch (e: ProxyConnectionException) {
-            LogManager.addLog("[ERROR] Proxy connection failed: ${e.message}")
-            throw e
-        } catch (e: SocketTimeoutException) {
-            LogManager.addLog("[ERROR] Socket timeout")
+        } catch (e: Exception) {
             throw e
         }
 
         tunnelSocket = socket
         LogManager.addLog("connected to socket ${socket.remoteSocketAddress}")
 
-        try {
-            establishSSH(compressionFailed)
-        } catch (e: JSchException) {
-            if (e.message?.contains("Algorithm negotiation") == true && !compressionFailed) {
-                LogManager.addLog("[ERROR] Compression not supported. Disabling and retrying...")
-                compressionFailed = true
-                enableCompression = false
-                establishSSH(compressionFailed)
-            } else {
-                throw e
-            }
-        }
+        // Establish SSH
+        establishSSH(compressionFailed)
 
+        // Success
         isConnected.set(true)
         _state.value = VpnState.CONNECTED
         reconnectAttempts = 0
@@ -301,14 +328,15 @@ class CustomVpnService : VpnService() {
                 val delay = BASE_RECONNECT_DELAY_MS * (1L shl reconnectAttempts.coerceAtMost(8))
                 LogManager.addLog("Reconnect attempt ${reconnectAttempts + 1} in ${delay}ms")
                 delay(delay)
-                try {
-                    doConnect()
+                // Reset rotation index? No, keep rotation state.
+                connect()
+                // If connect succeeds, it will set isConnected true and exit
+                if (isConnected.get()) {
                     reconnectAttempts = 0
                     return@launch
-                } catch (e: Exception) {
-                    reconnectAttempts++
-                    LogManager.addLog("[WARN] Reconnect failed: ${e.message}")
                 }
+                reconnectAttempts++
+                LogManager.addLog("[WARN] Reconnect failed: attempt $reconnectAttempts")
             }
             if (!isConnected.get()) {
                 _state.value = VpnState.ERROR
