@@ -25,7 +25,7 @@
 
     </ScrollView>
 
-    <!-- Copy Logs FAB -->
+    <!-- Copy FAB -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/copyLogsButton"
         android:layout_width="wrap_content"
@@ -33,11 +33,10 @@
         android:layout_gravity="bottom|end"
         android:layout_margin="16dp"
         android:src="@android:drawable/ic_menu_edit"
-        android:contentDescription="Copy Logs"
         app:backgroundTint="#4CAF50"
         app:tint="#FFFFFF" />
 
-    <!-- Share Logs FAB -->
+    <!-- Share FAB -->
     <com.google.android.material.floatingactionbutton.FloatingActionButton
         android:id="@+id/shareLogsButton"
         android:layout_width="wrap_content"
@@ -46,7 +45,6 @@
         android:layout_marginBottom="80dp"
         android:layout_marginEnd="16dp"
         android:src="@android:drawable/ic_menu_share"
-        android:contentDescription="Share Logs"
         app:backgroundTint="#2196F3"
         app:tint="#FFFFFF" />
 
