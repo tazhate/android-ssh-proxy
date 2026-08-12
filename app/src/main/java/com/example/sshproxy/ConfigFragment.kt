@@ -29,7 +29,6 @@ class ConfigFragment : Fragment() {
     private lateinit var splitDelayInput: EditText
     private lateinit var dnsPrimaryInput: EditText
     private lateinit var dnsSecondaryInput: EditText
-    private lateinit var pingTargetInput: EditText
     private lateinit var enableCompressionCheck: CheckBox
     private lateinit var alwaysReconnectCheck: CheckBox
     private lateinit var followRedirectsCheck: CheckBox
@@ -53,7 +52,6 @@ class ConfigFragment : Fragment() {
     private var currentSplitDelay: Int = 500
     private var currentDnsPrimary: String = "1.1.1.1"
     private var currentDnsSecondary: String = "1.0.0.1"
-    private var currentPingTarget: String = "1.1.1.1"
     private var currentEnableCompression: Boolean = true
     private var currentAlwaysReconnect: Boolean = false
     private var currentFollowRedirects: Boolean = true
@@ -66,7 +64,6 @@ class ConfigFragment : Fragment() {
     private var currentPingTimeout: Int = 5000
 
     private val VPN_REQUEST_CODE = 100
-    private lateinit var repository: ConfigRepository
     private lateinit var configManager: ConfigManager
 
     private val statusReceiver = object : BroadcastReceiver() {
@@ -99,7 +96,6 @@ class ConfigFragment : Fragment() {
         splitDelayInput = view.findViewById(R.id.splitDelayInput)
         dnsPrimaryInput = view.findViewById(R.id.dnsPrimaryInput)
         dnsSecondaryInput = view.findViewById(R.id.dnsSecondaryInput)
-        pingTargetInput = view.findViewById(R.id.pingTargetInput)
         enableCompressionCheck = view.findViewById(R.id.enableCompressionCheck)
         alwaysReconnectCheck = view.findViewById(R.id.alwaysReconnectCheck)
         followRedirectsCheck = view.findViewById(R.id.followRedirectsCheck)
@@ -113,7 +109,7 @@ class ConfigFragment : Fragment() {
         toggleButton = view.findViewById(R.id.toggleButton)
         statusText = view.findViewById(R.id.statusText)
 
-        // Proxy input sanitisation
+        // Proxy sanitisation
         proxyInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -128,9 +124,7 @@ class ConfigFragment : Fragment() {
             }
         })
 
-        repository = ConfigRepository(requireContext())
         configManager = ConfigManager(requireContext())
-
         loadSavedConfig()
 
         toggleButton.setOnClickListener {
@@ -150,7 +144,6 @@ class ConfigFragment : Fragment() {
         val splitDelay = splitDelayInput.text.toString().toIntOrNull() ?: 500
         val dnsPrimary = dnsPrimaryInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.1.1.1"
         val dnsSecondary = dnsSecondaryInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.0.0.1"
-        val pingTarget = pingTargetInput.text.toString().trim().takeIf { it.isNotEmpty() } ?: "1.1.1.1"
         val enableCompression = enableCompressionCheck.isChecked
         val alwaysReconnect = alwaysReconnectCheck.isChecked
         val followRedirects = followRedirectsCheck.isChecked
@@ -189,7 +182,7 @@ class ConfigFragment : Fragment() {
             splitDelay = splitDelay,
             dnsPrimary = dnsPrimary,
             dnsSecondary = dnsSecondary,
-            pingTarget = pingTarget,
+            pingTarget = "1.1.1.1", // unused
             enableCompression = enableCompression,
             alwaysReconnect = alwaysReconnect,
             followRedirects = followRedirects,
@@ -208,13 +201,6 @@ class ConfigFragment : Fragment() {
             return
         }
 
-        repository.saveConfig(
-            sshDetails, proxyString, payload, splitDelay,
-            dnsPrimary, dnsSecondary, pingTarget,
-            enableCompression, mtu, sendBuffer, receiveBuffer,
-            pingUrl, pingInterval, pingTimeout,
-            alwaysReconnect, followRedirects
-        )
         configManager.saveConfig(config)
 
         LogManager.clearLogs()
@@ -237,7 +223,6 @@ class ConfigFragment : Fragment() {
         currentSplitDelay = splitDelay
         currentDnsPrimary = dnsPrimary
         currentDnsSecondary = dnsSecondary
-        currentPingTarget = pingTarget
         currentEnableCompression = enableCompression
         currentAlwaysReconnect = alwaysReconnect
         currentFollowRedirects = followRedirects
@@ -277,7 +262,6 @@ class ConfigFragment : Fragment() {
             splitDelayInput.setText(config.splitDelay.toString())
             dnsPrimaryInput.setText(config.dnsPrimary)
             dnsSecondaryInput.setText(config.dnsSecondary)
-            pingTargetInput.setText(config.pingTarget)
             enableCompressionCheck.isChecked = config.enableCompression
             alwaysReconnectCheck.isChecked = config.alwaysReconnect
             followRedirectsCheck.isChecked = config.followRedirects
@@ -289,32 +273,8 @@ class ConfigFragment : Fragment() {
             pingIntervalInput.setText(config.pingInterval.toString())
             pingTimeoutInput.setText(config.pingTimeout.toString())
             LogManager.addLog("[Config] Loaded from ConfigManager")
-            return
-        }
-
-        repository.loadLatestConfig { entity ->
-            if (entity != null) {
-                sshDetailsInput.setText(entity.sshDetails)
-                proxyInput.setText(entity.proxyInput)
-                payloadInput.setText(entity.payload)
-                splitDelayInput.setText(entity.splitDelay.toString())
-                dnsPrimaryInput.setText("1.1.1.1")
-                dnsSecondaryInput.setText("1.0.0.1")
-                pingTargetInput.setText(entity.pingTarget)
-                enableCompressionCheck.isChecked = entity.enableCompression
-                alwaysReconnectCheck.isChecked = entity.alwaysReconnect
-                followRedirectsCheck.isChecked = entity.followRedirects
-                proxySslCheck.isChecked = false
-                mtuInput.setText(entity.mtu.toString())
-                sendBufferInput.setText(entity.sendBuffer.toString())
-                receiveBufferInput.setText(entity.receiveBuffer.toString())
-                pingUrlInput.setText(entity.pingUrl)
-                pingIntervalInput.setText(entity.pingInterval.toString())
-                pingTimeoutInput.setText(entity.pingTimeout.toString())
-                LogManager.addLog("[Config] Loaded from Room (legacy)")
-            } else {
-                setDefaultConfig()
-            }
+        } else {
+            setDefaultConfig()
         }
     }
 
@@ -325,7 +285,6 @@ class ConfigFragment : Fragment() {
         splitDelayInput.setText("500")
         dnsPrimaryInput.setText("1.1.1.1")
         dnsSecondaryInput.setText("1.0.0.1")
-        pingTargetInput.setText("1.1.1.1")
         enableCompressionCheck.isChecked = true
         alwaysReconnectCheck.isChecked = false
         followRedirectsCheck.isChecked = true
@@ -423,16 +382,6 @@ class ConfigFragment : Fragment() {
         serviceIntent.putExtra("splitDelay", currentSplitDelay)
         serviceIntent.putExtra("dnsPrimary", currentDnsPrimary)
         serviceIntent.putExtra("dnsSecondary", currentDnsSecondary)
-        serviceIntent.putExtra("pingTarget", currentPingTarget)
-        serviceIntent.putExtra("enableCompression", currentEnableCompression)
-        serviceIntent.putExtra("alwaysReconnect", currentAlwaysReconnect)
-        serviceIntent.putExtra("followRedirects", currentFollowRedirects)
-        serviceIntent.putExtra("proxyPort", currentProxyPort)
-        serviceIntent.putExtra("payload", currentPayload)
-        serviceIntent.putExtra("splitDelay", currentSplitDelay)
-        serviceIntent.putExtra("dnsPrimary", currentDnsPrimary)
-        serviceIntent.putExtra("dnsSecondary", currentDnsSecondary)
-        serviceIntent.putExtra("pingTarget", currentPingTarget)
         serviceIntent.putExtra("enableCompression", currentEnableCompression)
         serviceIntent.putExtra("alwaysReconnect", currentAlwaysReconnect)
         serviceIntent.putExtra("followRedirects", currentFollowRedirects)
