@@ -19,6 +19,9 @@ import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -31,7 +34,6 @@ class CustomVpnService : VpnService() {
         private const val TAG = "CustomVpnService"
         private const val WAKELOCK_TAG = "HttpCustom:WakeLock"
 
-        // Actions for Intents
         const val ACTION_CONNECT = "com.example.sshproxy.CONNECT"
         const val ACTION_DISCONNECT = "com.example.sshproxy.DISCONNECT"
         const val ACTION_RECONNECT = "com.example.sshproxy.RECONNECT"
@@ -43,7 +45,7 @@ class CustomVpnService : VpnService() {
     }
 
     private val _state = MutableStateFlow(VpnState.IDLE)
-    val state: StateFlow<VpnState> get() = _state.asStateFlow()
+    val state: StateFlow<VpnState> = _state.asStateFlow()
 
     // ---------- Core Members ----------
     private var sshSession: Session? = null
@@ -103,7 +105,6 @@ class CustomVpnService : VpnService() {
             ACTION_DISCONNECT -> disconnect()
             ACTION_RECONNECT -> reconnect()
             else -> {
-                // Fallback: if intent has extras, treat as connect
                 if (intent != null && intent.hasExtra("sshHost")) {
                     extractConfig(intent)
                     connect()
@@ -154,7 +155,6 @@ class CustomVpnService : VpnService() {
         LogManager.addLog("starting service")
         LogManager.addLog("ssh starting")
 
-        // Run connection in background
         CoroutineScope(Dispatchers.IO).launch {
             try {
                 doConnect()
@@ -164,7 +164,6 @@ class CustomVpnService : VpnService() {
                 sendStatus("Disconnected")
                 showNotification("Connection failed")
                 releaseWakeLock()
-                // If alwaysReconnect is enabled, start reconnection
                 if (alwaysReconnect) {
                     reconnect()
                 }
@@ -175,10 +174,8 @@ class CustomVpnService : VpnService() {
     private suspend fun doConnect() {
         var compressionFailed = false
 
-        // Build proxy string for payload
         val proxyString = if (proxyHost.isNotEmpty() && proxyPort.isNotEmpty()) "$proxyHost:$proxyPort" else ""
 
-        // 1. Connect via proxy using ProxyConnector
         val connector = ProxyConnector()
         val socket = try {
             connector.connectViaProxy(
@@ -205,7 +202,6 @@ class CustomVpnService : VpnService() {
         tunnelSocket = socket
         LogManager.addLog("connected to socket ${socket.remoteSocketAddress}")
 
-        // 2. Establish SSH
         try {
             establishSSH(compressionFailed)
         } catch (e: JSchException) {
@@ -213,14 +209,12 @@ class CustomVpnService : VpnService() {
                 LogManager.addLog("[ERROR] Compression not supported. Disabling and retrying...")
                 compressionFailed = true
                 enableCompression = false
-                // Retry SSH on same socket
                 establishSSH(compressionFailed)
             } else {
                 throw e
             }
         }
 
-        // 3. SSH connected – set up VPN
         isConnected.set(true)
         _state.value = VpnState.CONNECTED
         reconnectAttempts = 0
@@ -229,7 +223,6 @@ class CustomVpnService : VpnService() {
         setupVpn()
         startPing()
 
-        // 4. Start reconnection monitor if alwaysReconnect is on
         if (alwaysReconnect) {
             startReconnectMonitor()
         }
@@ -385,7 +378,7 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ---------- Reconnection Monitor (for alwaysReconnect) ----------
+    // ---------- Reconnection Monitor ----------
     private fun startReconnectMonitor() {
         stateJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected.get()) {
@@ -401,7 +394,6 @@ class CustomVpnService : VpnService() {
 
     // ---------- State Monitoring ----------
     private fun startStateMonitoring() {
-        // Broadcast state changes to UI
         stateJob = CoroutineScope(Dispatchers.Main).launch {
             state.collect { vpnState ->
                 sendStatus(vpnState.name)
