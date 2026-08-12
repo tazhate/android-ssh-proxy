@@ -8,10 +8,6 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.util.Base64
 
-/**
- * Handles HTTP CONNECT proxy connection with optional payload injection.
- * Supports authentication, redirects, and robust error handling.
- */
 class ProxyConnector {
 
     @Throws(ProxyConnectionException::class)
@@ -46,18 +42,15 @@ class ProxyConnector {
         val output = socket.getOutputStream()
         val input = socket.getInputStream()
 
-        // Build CONNECT request
         val connectRequest = buildConnectRequest(sshHost, sshPort, auth)
         LogManager.addLog("[ProxyConnector] Sending CONNECT request to $sshHost:$sshPort")
         output.write(connectRequest.toByteArray())
         output.flush()
 
-        // Read proxy response
         val reader = BufferedReader(InputStreamReader(input))
         val responseLine = reader.readLine() ?: throw ProxyConnectionException("Empty response from proxy")
         LogManager.addLog("[ProxyConnector] Proxy response: $responseLine")
 
-        // Handle redirects if enabled
         if (followRedirects && (responseLine.contains("301") || responseLine.contains("302") ||
                 responseLine.contains("303") || responseLine.contains("307"))) {
             val location = extractLocation(reader)
@@ -74,7 +67,6 @@ class ProxyConnector {
             }
         }
 
-        // Check if CONNECT succeeded (2xx, 3xx, 101, or "Connection established")
         val isSuccess = responseLine.startsWith("HTTP/1.1 2") ||
                 responseLine.startsWith("HTTP/1.1 3") ||
                 responseLine.contains("101") ||
@@ -82,7 +74,6 @@ class ProxyConnector {
                 responseLine.contains("Connection established")
 
         if (!isSuccess) {
-            // Drain remaining response for logging
             val errorBody = StringBuilder()
             var line: String?
             while (reader.ready().also { line = reader.readLine() } && line != null) {
@@ -93,10 +84,8 @@ class ProxyConnector {
             throw ProxyConnectionException("Proxy rejected connection: $responseLine")
         }
 
-        // Drain HTTP headers
         drainHttpHeaders(reader)
 
-        // Inject custom payload if provided
         if (payload.isNotEmpty()) {
             LogManager.addLog("[ProxyConnector] Injecting payload")
             val processedPayload = PayloadProcessor.processPayload(
@@ -145,8 +134,9 @@ class ProxyConnector {
     private fun extractLocation(reader: BufferedReader): String? {
         var line: String?
         while (reader.ready().also { line = reader.readLine() } && line != null) {
-            if (line!!.startsWith("Location:", ignoreCase = true)) {
-                return line.substringAfter(":").trim()
+            val currentLine = line ?: continue
+            if (currentLine.startsWith("Location:", ignoreCase = true)) {
+                return currentLine.substringAfter(":").trim()
             }
         }
         return null
