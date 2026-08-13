@@ -74,7 +74,8 @@ class CustomVpnService : VpnService() {
     private var enableCompression: Boolean = true
     private var alwaysReconnect: Boolean = false
     private var followRedirects: Boolean = true
-    private var proxySsl: Boolean = false
+    private var useSsl: Boolean = false
+    private var usePayload: Boolean = true
     private var mtu: Int = 1500
     private var sendBuffer: Int = 16384
     private var receiveBuffer: Int = 32768
@@ -126,7 +127,8 @@ class CustomVpnService : VpnService() {
         enableCompression = intent.getBooleanExtra("enableCompression", true)
         alwaysReconnect = intent.getBooleanExtra("alwaysReconnect", false)
         followRedirects = intent.getBooleanExtra("followRedirects", true)
-        proxySsl = intent.getBooleanExtra("proxySsl", false)
+        useSsl = intent.getBooleanExtra("proxySsl", false)
+        usePayload = intent.getBooleanExtra("usePayload", true)
         mtu = intent.getIntExtra("mtu", 1500)
         sendBuffer = intent.getIntExtra("sendBuffer", 16384)
         receiveBuffer = intent.getIntExtra("receiveBuffer", 32768)
@@ -220,7 +222,8 @@ class CustomVpnService : VpnService() {
                 readTimeout = 5000,
                 followRedirects = followRedirects,
                 splitDelayMs = splitDelayMs.toLong(),
-                useSsl = proxySsl
+                useSsl = useSsl,
+                usePayload = usePayload
             )
         } catch (e: ProxyConnectionException) {
             LogManager.addLog("[ERROR] All connection strategies failed: ${e.message}")
@@ -252,19 +255,21 @@ class CustomVpnService : VpnService() {
         session.setConfig("ServerAliveCountMax", "3")
         session.setConfig("TCPKeepAlive", "yes")
 
-        if (enableCompression && !compressionRetry) {
-            session.setConfig("compression.s2c", "zlib@openssh.com")
-            session.setConfig("compression.c2s", "zlib@openssh.com")
-            LogManager.addLog("SSH compression enabled (zlib)")
-        } else {
-            LogManager.addLog("SSH compression disabled")
-        }
+        // ---- CRITICAL: Force compression OFF (server compatibility) ----
+        session.setConfig("compression.c2s", "none")
+        session.setConfig("compression.s2c", "none")
+        LogManager.addLog("SSH compression forced OFF (server compatibility)")
 
         session.setSocketFactory(object : com.jcraft.jsch.SocketFactory {
             override fun createSocket(host: String?, port: Int): Socket = tunnelSocket ?: Socket(host, port)
             override fun getInputStream(socket: Socket) = socket.getInputStream()
             override fun getOutputStream(socket: Socket) = socket.getOutputStream()
         })
+
+        // ---- ADD DELAY BEFORE SSH HANDSHAKE ----
+        val delayMs = 1500L
+        LogManager.addLog("Waiting ${delayMs}ms before SSH handshake...")
+        Thread.sleep(delayMs)
 
         session.connect(25000)
         if (session.isConnected) {
