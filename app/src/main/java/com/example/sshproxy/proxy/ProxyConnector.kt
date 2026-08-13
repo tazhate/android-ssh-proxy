@@ -205,8 +205,7 @@ class ProxyConnector {
             if (!sslForSSH) {
                 socket.connect(InetSocketAddress(sshHost, sshPort), connectTimeout)
             }
-            // Increased read timeout to 15 seconds
-            socket.soTimeout = 15000
+            socket.soTimeout = 15000 // 15 seconds for response
             socket.tcpNoDelay = true
             socket.keepAlive = true
         } catch (e: Exception) {
@@ -246,29 +245,27 @@ class ProxyConnector {
             val reader = BufferedReader(InputStreamReader(socket.inputStream))
             var statusLine: String? = null
             val headers = mutableListOf<String>()
-            var line: String?
-
+            var line: String? = reader.readLine()
             LogManager.addLog("[ProxyConnector] Reading server response...")
 
-            // Read status line
-            while (reader.ready().also { line = reader.readLine() } && line != null) {
+            while (line != null) {
                 if (statusLine == null) {
                     statusLine = line
                     LogManager.addLog("[ProxyConnector] Server status: $statusLine")
-                    // If it's a 302 and we want to follow, we'll handle after reading headers
                 } else {
                     headers.add(line)
                     LogManager.addLog("[ProxyConnector] Header: $line")
                 }
                 // Stop at empty line (end of headers) or SSH banner
-                if (line!!.startsWith("SSH-2.0")) {
+                if (line.startsWith("SSH-2.0")) {
                     LogManager.addLog("[ProxyConnector] SSH banner detected – stopping response read")
                     break
                 }
-                if (line!!.isEmpty()) {
+                if (line.isEmpty()) {
                     LogManager.addLog("[ProxyConnector] End of HTTP headers")
                     break
                 }
+                line = reader.readLine()
             }
 
             // ---- HANDLE 302 REDIRECT ----
@@ -281,7 +278,6 @@ class ProxyConnector {
                     val uri = URI(location)
                     val newHost = uri.host ?: throw ProxyConnectionException("Invalid redirect location")
                     val newPort = if (uri.port != -1) uri.port else 443 // default to 443 for HTTPS
-                    // Reconnect with SSL if port is 443
                     val useSsl = newPort == 443
                     return connectDirect(
                         newHost, newPort, proxyHost, proxyPort, payload, userAgent,
