@@ -39,7 +39,6 @@ class CustomVpnService : VpnService() {
         const val ACTION_RECONNECT = "com.example.sshproxy.RECONNECT"
     }
 
-    // ---------- State Management ----------
     enum class VpnState {
         IDLE, CONNECTING, CONNECTED, DISCONNECTING, ERROR, RECONNECTING
     }
@@ -47,7 +46,6 @@ class CustomVpnService : VpnService() {
     private val _state = MutableStateFlow(VpnState.IDLE)
     val state: StateFlow<VpnState> = _state.asStateFlow()
 
-    // ---------- Core Members ----------
     private var sshSession: Session? = null
     private var tunnelSocket: Socket? = null
     private var vpnInterface: ParcelFileDescriptor? = null
@@ -62,7 +60,6 @@ class CustomVpnService : VpnService() {
     private val MAX_RECONNECT_ATTEMPTS = 10
     private val BASE_RECONNECT_DELAY_MS = 2000L
 
-    // ---------- Config ----------
     private var sshHost: String = ""
     private var sshPort: String = ""
     private var sshUser: String = ""
@@ -87,7 +84,6 @@ class CustomVpnService : VpnService() {
 
     private val USE_TRAFFIC_ROUTER = true
 
-    // ---------- Lifecycle ----------
     override fun onCreate() {
         super.onCreate()
         Log.d(TAG, "SERVICE CREATED")
@@ -139,7 +135,6 @@ class CustomVpnService : VpnService() {
         pingTimeout = intent.getIntExtra("pingTimeout", 5000)
     }
 
-    // ---------- Connect ----------
     private fun connect() {
         if (_state.value == VpnState.CONNECTING || _state.value == VpnState.CONNECTED) {
             LogManager.addLog("[WARN] Already connecting or connected")
@@ -329,7 +324,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ---------- VPN Setup ----------
     private fun setupVpn() {
         if (tunnelSocket == null || tunnelSocket!!.isClosed) {
             LogManager.addLog("[ERROR] Tunnel socket is closed before VPN setup")
@@ -364,7 +358,6 @@ class CustomVpnService : VpnService() {
         LogManager.addLog("Traffic router started")
     }
 
-    // ---------- Ping ----------
     private fun startPing() {
         pingJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected.get()) {
@@ -388,7 +381,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ---------- Reconnection Monitor ----------
     private fun startReconnectMonitor() {
         stateJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected.get()) {
@@ -402,7 +394,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ---------- State Monitoring ----------
     private fun startStateMonitoring() {
         stateJob = CoroutineScope(Dispatchers.Main).launch {
             state.collect { vpnState ->
@@ -411,7 +402,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // ---------- Helpers ----------
     private fun sendStatus(status: String) {
         val intent = Intent("VPN_STATUS")
         intent.putExtra("status", status)
