@@ -19,7 +19,8 @@ class ConnectionStrategy {
         readTimeout: Int = 5000,
         followRedirects: Boolean = false,
         splitDelayMs: Long = 500,
-        useSsl: Boolean = false
+        useSsl: Boolean = false,
+        usePayload: Boolean = true
     ): Socket {
         LogManager.addLog("[Strategy] Starting connection attempt...")
         LogManager.addLog("[Strategy] Proxy: $proxyHost:$proxyPort, SSH: $sshHost:$sshPort")
@@ -38,8 +39,10 @@ class ConnectionStrategy {
                 readTimeout = readTimeout,
                 followRedirects = followRedirects,
                 splitDelayMs = splitDelayMs,
-                useSsl = useSsl,
-                directFallback = false
+                sslForProxy = useSsl,
+                sslForSSH = useSsl,
+                directFallback = false,
+                usePayload = usePayload
             )
             LogManager.addLog("[Strategy] ✅ Proxy CONNECT succeeded")
             return result
@@ -52,7 +55,7 @@ class ConnectionStrategy {
                 LogManager.addLog("[Strategy] Falling back to direct spoofing...")
                 return tryDirectSpoof(
                     proxyHost, proxyPort, sshHost, sshPort,
-                    payload, userAgent, connectTimeout, readTimeout, splitDelayMs, useSsl
+                    payload, userAgent, connectTimeout, readTimeout, splitDelayMs, useSsl, usePayload
                 )
             } else {
                 throw e
@@ -70,7 +73,8 @@ class ConnectionStrategy {
         connectTimeout: Int,
         readTimeout: Int,
         splitDelayMs: Long,
-        useSsl: Boolean
+        useSsl: Boolean,
+        usePayload: Boolean
     ): Socket {
         LogManager.addLog("[Strategy] Direct spoofing to $sshHost:$sshPort")
         return connector.connectViaProxy(
@@ -85,8 +89,10 @@ class ConnectionStrategy {
             readTimeout = readTimeout,
             followRedirects = false,
             splitDelayMs = splitDelayMs,
-            useSsl = useSsl,
-            directFallback = true
+            sslForProxy = useSsl,
+            sslForSSH = useSsl,
+            directFallback = true,
+            usePayload = usePayload
         )
     }
 }
