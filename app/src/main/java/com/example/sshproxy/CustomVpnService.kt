@@ -13,7 +13,7 @@ import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.example.sshproxy.payload.PayloadProcessor
 import com.example.sshproxy.network.TrafficRouter
-import com.example.sshproxy.proxy.ProxyConnector
+import com.example.sshproxy.proxy.ConnectionStrategy
 import com.example.sshproxy.proxy.ProxyConnectionException
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
@@ -78,7 +78,6 @@ class CustomVpnService : VpnService() {
     private var alwaysReconnect: Boolean = false
     private var followRedirects: Boolean = true
     private var proxySsl: Boolean = false
-    private var proxySpoofOnly: Boolean = false
     private var mtu: Int = 1500
     private var sendBuffer: Int = 16384
     private var receiveBuffer: Int = 32768
@@ -132,7 +131,6 @@ class CustomVpnService : VpnService() {
         alwaysReconnect = intent.getBooleanExtra("alwaysReconnect", false)
         followRedirects = intent.getBooleanExtra("followRedirects", true)
         proxySsl = intent.getBooleanExtra("proxySsl", false)
-        proxySpoofOnly = intent.getBooleanExtra("proxySpoofOnly", false)
         mtu = intent.getIntExtra("mtu", 1500)
         sendBuffer = intent.getIntExtra("sendBuffer", 16384)
         receiveBuffer = intent.getIntExtra("receiveBuffer", 32768)
@@ -170,7 +168,7 @@ class CustomVpnService : VpnService() {
                     doConnect(compressionFailed)
                     return@launch
                 } catch (e: ProxyConnectionException) {
-                    LogManager.addLog("[ERROR] Proxy connection failed: ${e.message}")
+                    LogManager.addLog("[ERROR] Connection failed: ${e.message}")
                     PayloadProcessor.rotateIndex++
                     attempts++
                     LogManager.addLog("Rotating to next host (attempt $attempts/$maxAttempts)")
@@ -212,13 +210,10 @@ class CustomVpnService : VpnService() {
     }
 
     private suspend fun doConnect(compressionFailed: Boolean) {
-        val connector = ProxyConnector()
-        var socket: Socket
-        var directFallback = proxySpoofOnly
+        val strategy = ConnectionStrategy()
 
-        try {
-            // First attempt: normal proxy mode (CONNECT request)
-            socket = connector.connectViaProxy(
+        val socket = try {
+            strategy.establishTunnel(
                 proxyHost = proxyHost.ifEmpty { sshHost },
                 proxyPort = if (proxyPort.isNotEmpty()) proxyPort.toInt() else sshPort.toInt(),
                 sshHost = sshHost,
@@ -230,39 +225,16 @@ class CustomVpnService : VpnService() {
                 readTimeout = 5000,
                 followRedirects = followRedirects,
                 splitDelayMs = splitDelayMs.toLong(),
-                useSsl = proxySsl,
-                directFallback = false
+                useSsl = proxySsl
             )
         } catch (e: ProxyConnectionException) {
-            val msg = e.message ?: ""
-            // If proxy fails (timeout, 400, or any error) and we haven't tried direct fallback yet
-            if (!proxySpoofOnly && (msg.contains("timeout") || msg.contains("400") || msg.contains("Bad Request"))) {
-                LogManager.addLog("[FALLBACK] Proxy failed ($msg). Retrying with direct connection + spoofed payload...")
-                directFallback = true
-                socket = connector.connectViaProxy(
-                    proxyHost = proxyHost,
-                    proxyPort = if (proxyPort.isNotEmpty()) proxyPort.toInt() else sshPort.toInt(),
-                    sshHost = sshHost,
-                    sshPort = sshPort.toInt(),
-                    payload = payload,
-                    userAgent = "Mozilla/5.0 (Linux; Android 12) AppleWebKit/537.36",
-                    auth = null,
-                    connectTimeout = 25000,
-                    readTimeout = 5000,
-                    followRedirects = followRedirects,
-                    splitDelayMs = splitDelayMs.toLong(),
-                    useSsl = proxySsl,
-                    directFallback = true
-                )
-            } else {
-                throw e
-            }
+            LogManager.addLog("[ERROR] All connection strategies failed: ${e.message}")
+            throw e
         }
 
         tunnelSocket = socket
-        LogManager.addLog("connected to socket ${socket.remoteSocketAddress} (directFallback=$directFallback)")
+        LogManager.addLog("connected to socket ${socket.remoteSocketAddress}")
 
-        // Establish SSH (the socket is now either a proxied tunnel or raw direct)
         establishSSH(compressionFailed)
 
         isConnected.set(true)
