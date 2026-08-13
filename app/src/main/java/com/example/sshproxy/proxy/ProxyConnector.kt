@@ -31,10 +31,10 @@ class ProxyConnector {
         require(proxyHost.isNotEmpty() && proxyPort in 1..65535) { "Invalid proxy address" }
         require(sshHost.isNotEmpty() && sshPort in 1..65535) { "Invalid SSH target" }
 
-        // ---- DIRECT FALLBACK MODE: skip CONNECT, send payload directly ----
+        // ---- DIRECT FALLBACK MODE: no CONNECT, just send payload to SSH host ----
         if (directFallback) {
-            LogManager.addLog("[ProxyConnector] Direct fallback mode: connecting to SSH host directly")
-            return connectDirect(proxyHost, proxyPort, sshHost, sshPort, payload, userAgent, connectTimeout, readTimeout, splitDelayMs, useSsl)
+            LogManager.addLog("[ProxyConnector] Direct fallback mode: connecting to SSH host $sshHost:$sshPort")
+            return connectDirect(sshHost, sshPort, proxyHost, proxyPort, payload, userAgent, connectTimeout, readTimeout, splitDelayMs, useSsl)
         }
 
         // ---- NORMAL PROXY MODE: use CONNECT request ----
@@ -79,27 +79,44 @@ class ProxyConnector {
         output.flush()
 
         val reader = BufferedReader(InputStreamReader(input))
-        val responseLine = reader.readLine() ?: throw ProxyConnectionException("Empty response from proxy")
+        var responseLine = reader.readLine() ?: throw ProxyConnectionException("Empty response from proxy")
         LogManager.addLog("[ProxyConnector] Proxy response: $responseLine")
 
-        if (followRedirects && (responseLine.contains("301") || responseLine.contains("302") ||
-                responseLine.contains("303") || responseLine.contains("307"))) {
-            val location = extractLocation(reader)
-            if (location != null) {
-                LogManager.addLog("[ProxyConnector] Following redirect to $location")
-                val uri = java.net.URI(location)
-                val newHost = uri.host ?: throw ProxyConnectionException("Invalid redirect location")
-                val newPort = if (uri.port != -1) uri.port else 80
+        // ---- Handle redirects (301, 302, 303, 307) ----
+        if (responseLine.contains("301") || responseLine.contains("302") ||
+            responseLine.contains("303") || responseLine.contains("307")) {
+
+            if (followRedirects) {
+                val location = extractLocation(reader)
+                if (location != null) {
+                    LogManager.addLog("[ProxyConnector] Following redirect to $location")
+                    socket.close()
+                    try {
+                        val uri = java.net.URI(location)
+                        val newHost = uri.host ?: throw ProxyConnectionException("Invalid redirect location")
+                        val newPort = if (uri.port != -1) uri.port else 80
+                        return connectViaProxy(
+                            newHost, newPort, sshHost, sshPort, payload, userAgent, auth,
+                            connectTimeout, readTimeout, false,
+                            splitDelayMs, useSsl, directFallback
+                        )
+                    } catch (e: Exception) {
+                        throw ProxyConnectionException("Redirect failed: ${e.message}", e)
+                    }
+                } else {
+                    LogManager.addLog("[ProxyConnector] Redirect without Location header")
+                    socket.close()
+                    throw ProxyConnectionException("Redirect without Location: $responseLine")
+                }
+            } else {
+                LogManager.addLog("[ProxyConnector] Redirect received but followRedirects is OFF – treating as failure")
                 socket.close()
-                return connectViaProxy(
-                    newHost, newPort, sshHost, sshPort, payload, userAgent, auth,
-                    connectTimeout, readTimeout, followRedirects, splitDelayMs, useSsl, directFallback
-                )
+                throw ProxyConnectionException("Proxy returned redirect: $responseLine")
             }
         }
 
+        // ---- Check if CONNECT succeeded (2xx, 101, "Connection established") ----
         val isSuccess = responseLine.startsWith("HTTP/1.1 2") ||
-                responseLine.startsWith("HTTP/1.1 3") ||
                 responseLine.contains("101") ||
                 responseLine.contains("200") ||
                 responseLine.contains("Connection established")
@@ -115,6 +132,7 @@ class ProxyConnector {
             throw ProxyConnectionException("Proxy rejected connection: $responseLine")
         }
 
+        // Drain HTTP headers
         drainHttpHeaders(reader)
 
         // Inject payload after CONNECT
@@ -143,12 +161,12 @@ class ProxyConnector {
         return socket
     }
 
-    // ---- DIRECT FALLBACK: no CONNECT, just send payload ----
+    // ---- DIRECT FALLBACK: no CONNECT, just send payload to SSH host ----
     private fun connectDirect(
-        proxyHost: String,
-        proxyPort: Int,
         sshHost: String,
         sshPort: Int,
+        proxyHost: String,
+        proxyPort: Int,
         payload: String,
         userAgent: String,
         connectTimeout: Int,
@@ -186,9 +204,10 @@ class ProxyConnector {
 
         val output = socket.getOutputStream()
 
-        // ---- Send payload directly (no CONNECT) ----
+        // ---- Send ONLY the payload (no CONNECT) ----
         if (payload.isNotEmpty()) {
             LogManager.addLog("[ProxyConnector] Sending direct payload (no CONNECT)")
+            // Use proxyHost:proxyPort as the [proxy] replacement
             val proxyString = "$proxyHost:$proxyPort"
             val processedPayload = PayloadProcessor.processPayload(
                 payload,
@@ -197,7 +216,7 @@ class ProxyConnector {
                 proxyString,
                 userAgent
             )
-            LogManager.addLog("[ProxyConnector] Payload:\n$processedPayload")
+            LogManager.addLog("[ProxyConnector] Direct payload:\n$processedPayload")
             val parts = PayloadProcessor.splitPayload(processedPayload)
             for ((index, part) in parts.withIndex()) {
                 output.write(part.toByteArray())
@@ -209,7 +228,9 @@ class ProxyConnector {
             LogManager.addLog("[ProxyConnector] Direct payload sent (${parts.size} parts)")
         }
 
-        LogManager.addLog("[ProxyConnector] Direct connection established")
+        // ---- Do NOT read any proxy response – there is no proxy ----
+        // The socket is now ready for SSH.
+        LogManager.addLog("[ProxyConnector] Direct connection established – ready for SSH")
         return socket
     }
 
