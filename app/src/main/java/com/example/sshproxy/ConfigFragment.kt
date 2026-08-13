@@ -32,8 +32,8 @@ class ConfigFragment : Fragment() {
     private lateinit var enableCompressionCheck: CheckBox
     private lateinit var alwaysReconnectCheck: CheckBox
     private lateinit var followRedirectsCheck: CheckBox
+    private lateinit var usePayloadCheck: CheckBox
     private lateinit var proxySslCheck: CheckBox
-    // proxySpoofOnlyCheck removed
     private lateinit var mtuInput: EditText
     private lateinit var sendBufferInput: EditText
     private lateinit var receiveBufferInput: EditText
@@ -56,6 +56,7 @@ class ConfigFragment : Fragment() {
     private var currentEnableCompression: Boolean = true
     private var currentAlwaysReconnect: Boolean = false
     private var currentFollowRedirects: Boolean = true
+    private var currentUsePayload: Boolean = true
     private var currentProxySsl: Boolean = false
     private var currentMtu: Int = 1500
     private var currentSendBuffer: Int = 16384
@@ -100,8 +101,8 @@ class ConfigFragment : Fragment() {
         enableCompressionCheck = view.findViewById(R.id.enableCompressionCheck)
         alwaysReconnectCheck = view.findViewById(R.id.alwaysReconnectCheck)
         followRedirectsCheck = view.findViewById(R.id.followRedirectsCheck)
+        usePayloadCheck = view.findViewById(R.id.usePayloadCheck)
         proxySslCheck = view.findViewById(R.id.proxySslCheck)
-        // proxySpoofOnlyCheck removed
         mtuInput = view.findViewById(R.id.mtuInput)
         sendBufferInput = view.findViewById(R.id.sendBufferInput)
         receiveBufferInput = view.findViewById(R.id.receiveBufferInput)
@@ -148,6 +149,7 @@ class ConfigFragment : Fragment() {
         val enableCompression = enableCompressionCheck.isChecked
         val alwaysReconnect = alwaysReconnectCheck.isChecked
         val followRedirects = followRedirectsCheck.isChecked
+        val usePayload = usePayloadCheck.isChecked
         val proxySsl = proxySslCheck.isChecked
         val mtu = mtuInput.text.toString().toIntOrNull() ?: 1500
         val sendBuffer = sendBufferInput.text.toString().toIntOrNull() ?: 16384
@@ -157,6 +159,9 @@ class ConfigFragment : Fragment() {
         val pingTimeout = pingTimeoutInput.text.toString().toIntOrNull() ?: 5000
 
         LogManager.addLog("[DEBUG] Raw proxy input: '$proxyString'")
+        LogManager.addLog("[DEBUG] Raw payload length: ${payload.length}")
+        LogManager.addLog("[DEBUG] Payload first 100 chars: ${payload.take(100)}...")
+
         if (proxyString.isNotEmpty() && !proxyString.matches(Regex("^[a-zA-Z0-9.:-]+$"))) {
             LogManager.addLog("[WARN] Proxy contains invalid characters – resetting to empty")
             proxyString = ""
@@ -193,8 +198,8 @@ class ConfigFragment : Fragment() {
             pingUrl = pingUrl,
             pingInterval = pingInterval,
             pingTimeout = pingTimeout,
+            usePayload = usePayload,
             proxySsl = proxySsl
-            // proxySpoofOnly removed
         )
 
         if (!configManager.validateConfig(config)) {
@@ -209,8 +214,8 @@ class ConfigFragment : Fragment() {
         LogManager.addLog("[Config] SSH: $host:$port@$user")
         LogManager.addLog("[Config] Proxy: $proxyHost:$proxyPort (decoded)")
         LogManager.addLog("[Config] DNS: $dnsPrimary / $dnsSecondary")
-        LogManager.addLog("[Config] SSL: $proxySsl")
-        LogManager.addLog("[Config] MTU: $mtu")
+        LogManager.addLog("[Config] Use Payload: $usePayload")
+        LogManager.addLog("[Config] Payload length: ${payload.length}")
         LogManager.addLog("[INFO] Connect button pressed")
 
         updateStatus("Requesting VPN permission...", android.R.color.holo_orange_dark)
@@ -228,6 +233,7 @@ class ConfigFragment : Fragment() {
         currentEnableCompression = enableCompression
         currentAlwaysReconnect = alwaysReconnect
         currentFollowRedirects = followRedirects
+        currentUsePayload = usePayload
         currentProxySsl = proxySsl
         currentMtu = mtu
         currentSendBuffer = sendBuffer
@@ -267,6 +273,7 @@ class ConfigFragment : Fragment() {
             enableCompressionCheck.isChecked = config.enableCompression
             alwaysReconnectCheck.isChecked = config.alwaysReconnect
             followRedirectsCheck.isChecked = config.followRedirects
+            usePayloadCheck.isChecked = config.usePayload
             proxySslCheck.isChecked = config.proxySsl
             mtuInput.setText(config.mtu.toString())
             sendBufferInput.setText(config.sendBuffer.toString())
@@ -290,6 +297,7 @@ class ConfigFragment : Fragment() {
         enableCompressionCheck.isChecked = true
         alwaysReconnectCheck.isChecked = false
         followRedirectsCheck.isChecked = true
+        usePayloadCheck.isChecked = true
         proxySslCheck.isChecked = false
         mtuInput.setText("1500")
         sendBufferInput.setText("16384")
@@ -371,6 +379,8 @@ class ConfigFragment : Fragment() {
 
     private fun startVpnService() {
         LogManager.addLog("[DEBUG] Sending proxyHost='$currentProxyHost', proxyPort='$currentProxyPort'")
+        LogManager.addLog("[DEBUG] Sending payload length: ${currentPayload.length}")
+        LogManager.addLog("[DEBUG] Sending payload (first 100 chars): ${currentPayload.take(100)}...")
 
         val serviceIntent = Intent(requireContext(), CustomVpnService::class.java)
         serviceIntent.action = CustomVpnService.ACTION_CONNECT
@@ -387,8 +397,8 @@ class ConfigFragment : Fragment() {
         serviceIntent.putExtra("enableCompression", currentEnableCompression)
         serviceIntent.putExtra("alwaysReconnect", currentAlwaysReconnect)
         serviceIntent.putExtra("followRedirects", currentFollowRedirects)
+        serviceIntent.putExtra("usePayload", currentUsePayload)
         serviceIntent.putExtra("proxySsl", currentProxySsl)
-        // proxySpoofOnly removed
         serviceIntent.putExtra("mtu", currentMtu)
         serviceIntent.putExtra("sendBuffer", currentSendBuffer)
         serviceIntent.putExtra("receiveBuffer", currentReceiveBuffer)
