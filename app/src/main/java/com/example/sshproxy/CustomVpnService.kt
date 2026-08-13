@@ -261,7 +261,6 @@ class CustomVpnService : VpnService() {
         session.setConfig("ServerAliveCountMax", "3")
         session.setConfig("TCPKeepAlive", "yes")
 
-        // ---- Force compression OFF ----
         session.setConfig("compression.c2s", "none")
         session.setConfig("compression.s2c", "none")
         LogManager.addLog("SSH compression forced OFF (server compatibility)")
@@ -272,7 +271,6 @@ class CustomVpnService : VpnService() {
             override fun getOutputStream(socket: Socket) = socket.getOutputStream()
         })
 
-        // ---- Delay before SSH ----
         val delayMs = 1500L
         LogManager.addLog("Waiting ${delayMs}ms before SSH handshake...")
         Thread.sleep(delayMs)
