@@ -40,7 +40,7 @@ class ProxyConnector {
                     if (sslForSSH) " (SSL)" else "")
             return connectDirect(
                 sshHost, sshPort, proxyHost, proxyPort, payload, userAgent,
-                connectTimeout, splitDelayMs, sslForSSH, usePayload, followRedirects
+                connectTimeout, splitDelayMs, sslForSSH, usePayload
             )
         }
 
@@ -104,7 +104,7 @@ class ProxyConnector {
                         val newPort = if (uri.port != -1) uri.port else 80
                         return connectViaProxy(
                             newHost, newPort, sshHost, sshPort, payload, userAgent, auth,
-                            connectTimeout, readTimeout, false, // no more redirects after this
+                            connectTimeout, readTimeout, false,
                             splitDelayMs, sslForProxy, sslForSSH, directFallback, usePayload
                         )
                     } catch (e: Exception) {
@@ -153,6 +153,8 @@ class ProxyConnector {
                 proxyString,
                 userAgent
             )
+            // Debug: show processed payload (first 200 chars)
+            LogManager.addLog("[ProxyConnector] Processed payload (first 200 chars):\n${processedPayload.take(200)}...")
             val parts = PayloadProcessor.splitPayload(processedPayload)
             LogManager.addLog("[ProxyConnector] Split into ${parts.size} parts")
             for ((index, part) in parts.withIndex()) {
@@ -171,7 +173,7 @@ class ProxyConnector {
         return socket
     }
 
-    // ---- DIRECT FALLBACK ----
+    // ---- DIRECT FALLBACK: send payload, then return socket immediately (NO READ) ----
     private fun connectDirect(
         sshHost: String,
         sshPort: Int,
@@ -182,8 +184,7 @@ class ProxyConnector {
         connectTimeout: Int,
         splitDelayMs: Long,
         sslForSSH: Boolean,
-        usePayload: Boolean,
-        followRedirects: Boolean
+        usePayload: Boolean
     ): Socket {
         LogManager.addLog("[ProxyConnector] Direct connection to $sshHost:$sshPort" +
                 if (sslForSSH) " (SSL)" else "")
@@ -205,7 +206,6 @@ class ProxyConnector {
             if (!sslForSSH) {
                 socket.connect(InetSocketAddress(sshHost, sshPort), connectTimeout)
             }
-            socket.soTimeout = 15000 // 15 seconds for response
             socket.tcpNoDelay = true
             socket.keepAlive = true
         } catch (e: Exception) {
@@ -226,6 +226,8 @@ class ProxyConnector {
                 proxyString,
                 userAgent
             )
+            // Debug: show processed payload (first 200 chars)
+            LogManager.addLog("[ProxyConnector] Processed payload (first 200 chars):\n${processedPayload.take(200)}...")
             val parts = PayloadProcessor.splitPayload(processedPayload)
             LogManager.addLog("[ProxyConnector] Split into ${parts.size} parts")
             for ((index, part) in parts.withIndex()) {
@@ -240,87 +242,9 @@ class ProxyConnector {
             LogManager.addLog("[ProxyConnector] Skipping payload (usePayload=false)")
         }
 
-        // ---- READ AND HANDLE RESPONSE ----
-        try {
-            val reader = BufferedReader(InputStreamReader(socket.inputStream))
-            var statusLine: String? = null
-            val headers = mutableListOf<String>()
-            var line: String? = reader.readLine()
-            LogManager.addLog("[ProxyConnector] Reading server response...")
-
-            while (line != null) {
-                if (statusLine == null) {
-                    statusLine = line
-                    LogManager.addLog("[ProxyConnector] Server status: $statusLine")
-                } else {
-                    headers.add(line)
-                    LogManager.addLog("[ProxyConnector] Header: $line")
-                }
-                // Stop at empty line (end of headers) or SSH banner
-                if (line.startsWith("SSH-2.0")) {
-                    LogManager.addLog("[ProxyConnector] SSH banner detected – stopping response read")
-                    break
-                }
-                if (line.isEmpty()) {
-                    LogManager.addLog("[ProxyConnector] End of HTTP headers")
-                    break
-                }
-                line = reader.readLine()
-            }
-
-            // ---- HANDLE 302 REDIRECT ----
-            if (statusLine != null && statusLine.contains("302") && followRedirects) {
-                val locationHeader = headers.find { it.startsWith("Location:", ignoreCase = true) }
-                if (locationHeader != null) {
-                    val location = locationHeader.substringAfter(":").trim()
-                    LogManager.addLog("[ProxyConnector] Following redirect to: $location")
-                    socket.close()
-                    val uri = URI(location)
-                    val newHost = uri.host ?: throw ProxyConnectionException("Invalid redirect location")
-                    val newPort = if (uri.port != -1) uri.port else 443 // default to 443 for HTTPS
-                    val useSsl = newPort == 443
-                    return connectDirect(
-                        newHost, newPort, proxyHost, proxyPort, payload, userAgent,
-                        connectTimeout, splitDelayMs, useSsl, usePayload, followRedirects
-                    )
-                } else {
-                    LogManager.addLog("[ProxyConnector] 302 without Location header – treating as failure")
-                    socket.close()
-                    throw ProxyConnectionException("302 without Location")
-                }
-            }
-
-            // ---- VALIDATE RESPONSE ----
-            if (statusLine != null) {
-                // Accept 2xx, 3xx (if not following), 101, SSH banner – only fail on 4xx and 5xx
-                val isAccepted = statusLine.startsWith("HTTP/1.1 2") ||
-                        statusLine.startsWith("HTTP/1.1 3") ||
-                        statusLine.contains("101") ||
-                        statusLine.contains("SSH-2.0")
-                if (!isAccepted) {
-                    LogManager.addLog("[ProxyConnector] Invalid response: $statusLine")
-                    socket.close()
-                    throw ProxyConnectionException("Server returned $statusLine")
-                }
-                if (statusLine.startsWith("HTTP/1.1 3")) {
-                    LogManager.addLog("[ProxyConnector] Redirect (3xx) accepted – treating as success (auto-replace)")
-                } else {
-                    LogManager.addLog("[ProxyConnector] Server status accepted ($statusLine) – continuing to SSH")
-                }
-            } else {
-                LogManager.addLog("[ProxyConnector] No response received – assuming success")
-            }
-
-        } catch (e: java.net.SocketTimeoutException) {
-            LogManager.addLog("[ProxyConnector] Response read timed out – assuming SSH handshake can start")
-        } catch (e: Exception) {
-            LogManager.addLog("[ProxyConnector] Error reading response: ${e.message} – continuing")
-        }
-
-        // ---- Reset timeout for SSH ----
-        socket.soTimeout = 30000
-
-        LogManager.addLog("[ProxyConnector] Direct connection established – ready for SSH")
+        // ---- DO NOT READ ANY RESPONSE ----
+        // The SSH banner is handled by JSch.
+        LogManager.addLog("[ProxyConnector] Direct connection established – returning socket for SSH immediately")
         return socket
     }
 
