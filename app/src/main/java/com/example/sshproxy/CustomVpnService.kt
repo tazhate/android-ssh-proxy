@@ -74,8 +74,8 @@ class CustomVpnService : VpnService() {
     private var enableCompression: Boolean = true
     private var alwaysReconnect: Boolean = false
     private var followRedirects: Boolean = true
-    private var useSsl: Boolean = false
     private var usePayload: Boolean = true
+    private var useSsl: Boolean = false
     private var mtu: Int = 1500
     private var sendBuffer: Int = 16384
     private var receiveBuffer: Int = 32768
@@ -127,14 +127,17 @@ class CustomVpnService : VpnService() {
         enableCompression = intent.getBooleanExtra("enableCompression", true)
         alwaysReconnect = intent.getBooleanExtra("alwaysReconnect", false)
         followRedirects = intent.getBooleanExtra("followRedirects", true)
-        useSsl = intent.getBooleanExtra("proxySsl", false)
         usePayload = intent.getBooleanExtra("usePayload", true)
+        useSsl = intent.getBooleanExtra("proxySsl", false)
         mtu = intent.getIntExtra("mtu", 1500)
         sendBuffer = intent.getIntExtra("sendBuffer", 16384)
         receiveBuffer = intent.getIntExtra("receiveBuffer", 32768)
         pingUrl = intent.getStringExtra("pingUrl") ?: "https://dns.google"
         pingInterval = intent.getIntExtra("pingInterval", 2000)
         pingTimeout = intent.getIntExtra("pingTimeout", 5000)
+
+        LogManager.addLog("[DEBUG] Payload received in service: ${payload.take(100)}...")
+        LogManager.addLog("[DEBUG] Payload length: ${payload.length}")
     }
 
     private fun connect() {
@@ -209,6 +212,9 @@ class CustomVpnService : VpnService() {
     private suspend fun doConnect(compressionFailed: Boolean) {
         val strategy = ConnectionStrategy()
 
+        LogManager.addLog("[DEBUG] doConnect: payload length = ${payload.length}")
+        LogManager.addLog("[DEBUG] doConnect: usePayload = $usePayload")
+
         val socket = try {
             strategy.establishTunnel(
                 proxyHost = proxyHost.ifEmpty { sshHost },
@@ -255,7 +261,7 @@ class CustomVpnService : VpnService() {
         session.setConfig("ServerAliveCountMax", "3")
         session.setConfig("TCPKeepAlive", "yes")
 
-        // ---- CRITICAL: Force compression OFF (server compatibility) ----
+        // ---- Force compression OFF ----
         session.setConfig("compression.c2s", "none")
         session.setConfig("compression.s2c", "none")
         LogManager.addLog("SSH compression forced OFF (server compatibility)")
@@ -266,7 +272,7 @@ class CustomVpnService : VpnService() {
             override fun getOutputStream(socket: Socket) = socket.getOutputStream()
         })
 
-        // ---- ADD DELAY BEFORE SSH HANDSHAKE ----
+        // ---- Delay before SSH ----
         val delayMs = 1500L
         LogManager.addLog("Waiting ${delayMs}ms before SSH handshake...")
         Thread.sleep(delayMs)
