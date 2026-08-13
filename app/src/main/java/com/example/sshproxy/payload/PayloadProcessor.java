@@ -43,6 +43,7 @@ public class PayloadProcessor {
     }
 
     public static String[] splitPayload(String payload) {
+        // Split on literal [split] token
         return payload.split("\\[split\\]");
     }
 
