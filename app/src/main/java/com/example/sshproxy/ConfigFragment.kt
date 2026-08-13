@@ -33,7 +33,7 @@ class ConfigFragment : Fragment() {
     private lateinit var alwaysReconnectCheck: CheckBox
     private lateinit var followRedirectsCheck: CheckBox
     private lateinit var proxySslCheck: CheckBox
-    private lateinit var proxySpoofOnlyCheck: CheckBox   // NEW
+    // proxySpoofOnlyCheck removed
     private lateinit var mtuInput: EditText
     private lateinit var sendBufferInput: EditText
     private lateinit var receiveBufferInput: EditText
@@ -57,7 +57,6 @@ class ConfigFragment : Fragment() {
     private var currentAlwaysReconnect: Boolean = false
     private var currentFollowRedirects: Boolean = true
     private var currentProxySsl: Boolean = false
-    private var currentProxySpoofOnly: Boolean = false
     private var currentMtu: Int = 1500
     private var currentSendBuffer: Int = 16384
     private var currentReceiveBuffer: Int = 32768
@@ -102,7 +101,7 @@ class ConfigFragment : Fragment() {
         alwaysReconnectCheck = view.findViewById(R.id.alwaysReconnectCheck)
         followRedirectsCheck = view.findViewById(R.id.followRedirectsCheck)
         proxySslCheck = view.findViewById(R.id.proxySslCheck)
-        proxySpoofOnlyCheck = view.findViewById(R.id.proxySpoofOnlyCheck)
+        // proxySpoofOnlyCheck removed
         mtuInput = view.findViewById(R.id.mtuInput)
         sendBufferInput = view.findViewById(R.id.sendBufferInput)
         receiveBufferInput = view.findViewById(R.id.receiveBufferInput)
@@ -112,7 +111,6 @@ class ConfigFragment : Fragment() {
         toggleButton = view.findViewById(R.id.toggleButton)
         statusText = view.findViewById(R.id.statusText)
 
-        // Proxy sanitisation
         proxyInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
             override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
@@ -151,7 +149,6 @@ class ConfigFragment : Fragment() {
         val alwaysReconnect = alwaysReconnectCheck.isChecked
         val followRedirects = followRedirectsCheck.isChecked
         val proxySsl = proxySslCheck.isChecked
-        val proxySpoofOnly = proxySpoofOnlyCheck.isChecked
         val mtu = mtuInput.text.toString().toIntOrNull() ?: 1500
         val sendBuffer = sendBufferInput.text.toString().toIntOrNull() ?: 16384
         val receiveBuffer = receiveBufferInput.text.toString().toIntOrNull() ?: 32768
@@ -196,8 +193,8 @@ class ConfigFragment : Fragment() {
             pingUrl = pingUrl,
             pingInterval = pingInterval,
             pingTimeout = pingTimeout,
-            proxySsl = proxySsl,
-            proxySpoofOnly = proxySpoofOnly
+            proxySsl = proxySsl
+            // proxySpoofOnly removed
         )
 
         if (!configManager.validateConfig(config)) {
@@ -212,7 +209,7 @@ class ConfigFragment : Fragment() {
         LogManager.addLog("[Config] SSH: $host:$port@$user")
         LogManager.addLog("[Config] Proxy: $proxyHost:$proxyPort (decoded)")
         LogManager.addLog("[Config] DNS: $dnsPrimary / $dnsSecondary")
-        LogManager.addLog("[Config] SSL: $proxySsl, SpoofOnly: $proxySpoofOnly")
+        LogManager.addLog("[Config] SSL: $proxySsl")
         LogManager.addLog("[Config] MTU: $mtu")
         LogManager.addLog("[INFO] Connect button pressed")
 
@@ -232,7 +229,6 @@ class ConfigFragment : Fragment() {
         currentAlwaysReconnect = alwaysReconnect
         currentFollowRedirects = followRedirects
         currentProxySsl = proxySsl
-        currentProxySpoofOnly = proxySpoofOnly
         currentMtu = mtu
         currentSendBuffer = sendBuffer
         currentReceiveBuffer = receiveBuffer
@@ -272,7 +268,6 @@ class ConfigFragment : Fragment() {
             alwaysReconnectCheck.isChecked = config.alwaysReconnect
             followRedirectsCheck.isChecked = config.followRedirects
             proxySslCheck.isChecked = config.proxySsl
-            proxySpoofOnlyCheck.isChecked = config.proxySpoofOnly
             mtuInput.setText(config.mtu.toString())
             sendBufferInput.setText(config.sendBuffer.toString())
             receiveBufferInput.setText(config.receiveBuffer.toString())
@@ -296,7 +291,6 @@ class ConfigFragment : Fragment() {
         alwaysReconnectCheck.isChecked = false
         followRedirectsCheck.isChecked = true
         proxySslCheck.isChecked = false
-        proxySpoofOnlyCheck.isChecked = false
         mtuInput.setText("1500")
         sendBufferInput.setText("16384")
         receiveBufferInput.setText("32768")
@@ -394,7 +388,7 @@ class ConfigFragment : Fragment() {
         serviceIntent.putExtra("alwaysReconnect", currentAlwaysReconnect)
         serviceIntent.putExtra("followRedirects", currentFollowRedirects)
         serviceIntent.putExtra("proxySsl", currentProxySsl)
-        serviceIntent.putExtra("proxySpoofOnly", currentProxySpoofOnly)
+        // proxySpoofOnly removed
         serviceIntent.putExtra("mtu", currentMtu)
         serviceIntent.putExtra("sendBuffer", currentSendBuffer)
         serviceIntent.putExtra("receiveBuffer", currentReceiveBuffer)
