@@ -234,14 +234,12 @@ class ProxyConnector {
             socket.soTimeout = 3000 // 3 second timeout for response
             val reader = BufferedReader(InputStreamReader(input))
             var responseLine: String? = null
-            var responseBuilder = StringBuilder()
+            val responseBuilder = StringBuilder()
             while (reader.ready().also { responseLine = reader.readLine() } && responseLine != null) {
                 responseBuilder.append(responseLine).append("\n")
             }
             if (responseBuilder.isNotEmpty()) {
                 LogManager.addLog("[ProxyConnector] Server response:\n$responseBuilder")
-                // If it's a 101 or 200, we can continue
-                // Otherwise, we might still proceed – the socket may still be usable.
             } else {
                 LogManager.addLog("[ProxyConnector] No response received (server may start SSH immediately)")
             }
