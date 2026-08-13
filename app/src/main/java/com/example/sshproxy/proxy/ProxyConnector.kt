@@ -6,6 +6,7 @@ import java.io.BufferedReader
 import java.io.InputStreamReader
 import java.net.InetSocketAddress
 import java.net.Socket
+import java.net.URI
 import javax.net.ssl.SSLSocket
 import javax.net.ssl.SSLSocketFactory
 import java.util.Base64
@@ -25,7 +26,8 @@ class ProxyConnector {
         readTimeout: Int = 5000,
         followRedirects: Boolean = false,
         splitDelayMs: Long = 500,
-        useSsl: Boolean = false,
+        sslForProxy: Boolean = false,
+        sslForSSH: Boolean = false,
         directFallback: Boolean = false,
         usePayload: Boolean = true
     ): Socket {
@@ -34,8 +36,12 @@ class ProxyConnector {
 
         // ---- DIRECT FALLBACK MODE: no CONNECT, send payload directly ----
         if (directFallback) {
-            LogManager.addLog("[ProxyConnector] Direct fallback mode: connecting to SSH host $sshHost:$sshPort")
-            return connectDirect(sshHost, sshPort, proxyHost, proxyPort, payload, userAgent, connectTimeout, splitDelayMs, useSsl, usePayload)
+            LogManager.addLog("[ProxyConnector] Direct fallback mode: connecting to SSH host $sshHost:$sshPort" +
+                    if (sslForSSH) " (SSL)" else "")
+            return connectDirect(
+                sshHost, sshPort, proxyHost, proxyPort, payload, userAgent,
+                connectTimeout, splitDelayMs, sslForSSH, usePayload, followRedirects
+            )
         }
 
         // ---- NORMAL PROXY MODE: use CONNECT request ----
@@ -43,9 +49,9 @@ class ProxyConnector {
         val targetPort = proxyPort
 
         LogManager.addLog("[ProxyConnector] Connecting to proxy $targetHost:$targetPort" +
-                if (useSsl) " (SSL)" else "")
+                if (sslForProxy) " (SSL)" else "")
 
-        val socket: Socket = if (useSsl) {
+        val socket: Socket = if (sslForProxy) {
             try {
                 val factory = SSLSocketFactory.getDefault()
                 val sslSocket = factory.createSocket(targetHost, targetPort) as SSLSocket
@@ -59,7 +65,7 @@ class ProxyConnector {
         }
 
         try {
-            if (!useSsl) {
+            if (!sslForProxy) {
                 socket.connect(InetSocketAddress(targetHost, targetPort), connectTimeout)
             }
             socket.soTimeout = readTimeout
@@ -93,13 +99,13 @@ class ProxyConnector {
                     LogManager.addLog("[ProxyConnector] Following redirect to $location")
                     socket.close()
                     try {
-                        val uri = java.net.URI(location)
+                        val uri = URI(location)
                         val newHost = uri.host ?: throw ProxyConnectionException("Invalid redirect location")
                         val newPort = if (uri.port != -1) uri.port else 80
                         return connectViaProxy(
                             newHost, newPort, sshHost, sshPort, payload, userAgent, auth,
-                            connectTimeout, readTimeout, false,
-                            splitDelayMs, useSsl, directFallback, usePayload
+                            connectTimeout, readTimeout, false, // no more redirects after this
+                            splitDelayMs, sslForProxy, sslForSSH, directFallback, usePayload
                         )
                     } catch (e: Exception) {
                         throw ProxyConnectionException("Redirect failed: ${e.message}", e)
@@ -175,13 +181,14 @@ class ProxyConnector {
         userAgent: String,
         connectTimeout: Int,
         splitDelayMs: Long,
-        useSsl: Boolean,
-        usePayload: Boolean
+        sslForSSH: Boolean,
+        usePayload: Boolean,
+        followRedirects: Boolean
     ): Socket {
         LogManager.addLog("[ProxyConnector] Direct connection to $sshHost:$sshPort" +
-                if (useSsl) " (SSL)" else "")
+                if (sslForSSH) " (SSL)" else "")
 
-        val socket: Socket = if (useSsl) {
+        val socket: Socket = if (sslForSSH) {
             try {
                 val factory = SSLSocketFactory.getDefault()
                 val sslSocket = factory.createSocket(sshHost, sshPort) as SSLSocket
@@ -195,9 +202,11 @@ class ProxyConnector {
         }
 
         try {
-            if (!useSsl) {
+            if (!sslForSSH) {
                 socket.connect(InetSocketAddress(sshHost, sshPort), connectTimeout)
             }
+            // Increased read timeout to 15 seconds
+            socket.soTimeout = 15000
             socket.tcpNoDelay = true
             socket.keepAlive = true
         } catch (e: Exception) {
@@ -232,19 +241,26 @@ class ProxyConnector {
             LogManager.addLog("[ProxyConnector] Skipping payload (usePayload=false)")
         }
 
-        // ---- READ AND ACCEPT 3xx RESPONSES (auto-replace like HTTP Custom) ----
+        // ---- READ AND HANDLE RESPONSE ----
         try {
-            socket.soTimeout = 5000
             val reader = BufferedReader(InputStreamReader(socket.inputStream))
-            var line: String?
             var statusLine: String? = null
+            val headers = mutableListOf<String>()
+            var line: String?
+
             LogManager.addLog("[ProxyConnector] Reading server response...")
 
+            // Read status line
             while (reader.ready().also { line = reader.readLine() } && line != null) {
-                LogManager.addLog("[ProxyConnector] Server response: $line")
                 if (statusLine == null) {
-                    statusLine = line // capture first line (status)
+                    statusLine = line
+                    LogManager.addLog("[ProxyConnector] Server status: $statusLine")
+                    // If it's a 302 and we want to follow, we'll handle after reading headers
+                } else {
+                    headers.add(line)
+                    LogManager.addLog("[ProxyConnector] Header: $line")
                 }
+                // Stop at empty line (end of headers) or SSH banner
                 if (line!!.startsWith("SSH-2.0")) {
                     LogManager.addLog("[ProxyConnector] SSH banner detected – stopping response read")
                     break
@@ -255,19 +271,41 @@ class ProxyConnector {
                 }
             }
 
+            // ---- HANDLE 302 REDIRECT ----
+            if (statusLine != null && statusLine.contains("302") && followRedirects) {
+                val locationHeader = headers.find { it.startsWith("Location:", ignoreCase = true) }
+                if (locationHeader != null) {
+                    val location = locationHeader.substringAfter(":").trim()
+                    LogManager.addLog("[ProxyConnector] Following redirect to: $location")
+                    socket.close()
+                    val uri = URI(location)
+                    val newHost = uri.host ?: throw ProxyConnectionException("Invalid redirect location")
+                    val newPort = if (uri.port != -1) uri.port else 443 // default to 443 for HTTPS
+                    // Reconnect with SSL if port is 443
+                    val useSsl = newPort == 443
+                    return connectDirect(
+                        newHost, newPort, proxyHost, proxyPort, payload, userAgent,
+                        connectTimeout, splitDelayMs, useSsl, usePayload, followRedirects
+                    )
+                } else {
+                    LogManager.addLog("[ProxyConnector] 302 without Location header – treating as failure")
+                    socket.close()
+                    throw ProxyConnectionException("302 without Location")
+                }
+            }
+
             // ---- VALIDATE RESPONSE ----
             if (statusLine != null) {
-                // Accept 2xx, 3xx, 101, and SSH banner – ONLY fail on 4xx and 5xx
+                // Accept 2xx, 3xx (if not following), 101, SSH banner – only fail on 4xx and 5xx
                 val isAccepted = statusLine.startsWith("HTTP/1.1 2") ||
-                        statusLine.startsWith("HTTP/1.1 3") ||   // <-- ACCEPT 302, 301, 307 (auto-replace)
+                        statusLine.startsWith("HTTP/1.1 3") ||
                         statusLine.contains("101") ||
                         statusLine.contains("SSH-2.0")
                 if (!isAccepted) {
-                    LogManager.addLog("[ProxyConnector] Invalid response from server: $statusLine")
+                    LogManager.addLog("[ProxyConnector] Invalid response: $statusLine")
                     socket.close()
                     throw ProxyConnectionException("Server returned $statusLine")
                 }
-                // Log the accepted status
                 if (statusLine.startsWith("HTTP/1.1 3")) {
                     LogManager.addLog("[ProxyConnector] Redirect (3xx) accepted – treating as success (auto-replace)")
                 } else {
