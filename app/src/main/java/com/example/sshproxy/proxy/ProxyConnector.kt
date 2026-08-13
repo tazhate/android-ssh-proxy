@@ -31,7 +31,7 @@ class ProxyConnector {
         require(proxyHost.isNotEmpty() && proxyPort in 1..65535) { "Invalid proxy address" }
         require(sshHost.isNotEmpty() && sshPort in 1..65535) { "Invalid SSH target" }
 
-        // ---- DIRECT FALLBACK MODE: no CONNECT, just send payload to SSH host ----
+        // ---- DIRECT FALLBACK MODE: no CONNECT, send payload directly ----
         if (directFallback) {
             LogManager.addLog("[ProxyConnector] Direct fallback mode: connecting to SSH host $sshHost:$sshPort")
             return connectDirect(sshHost, sshPort, proxyHost, proxyPort, payload, userAgent, connectTimeout, readTimeout, splitDelayMs, useSsl)
@@ -147,6 +147,7 @@ class ProxyConnector {
                 userAgent
             )
             val parts = PayloadProcessor.splitPayload(processedPayload)
+            LogManager.addLog("[ProxyConnector] Split into ${parts.size} parts")
             for ((index, part) in parts.withIndex()) {
                 output.write(part.toByteArray())
                 output.flush()
@@ -161,7 +162,7 @@ class ProxyConnector {
         return socket
     }
 
-    // ---- DIRECT FALLBACK: no CONNECT, just send payload to SSH host ----
+    // ---- DIRECT FALLBACK: send payload, read response, then return socket ----
     private fun connectDirect(
         sshHost: String,
         sshPort: Int,
@@ -203,11 +204,11 @@ class ProxyConnector {
         }
 
         val output = socket.getOutputStream()
+        val input = socket.getInputStream()
 
-        // ---- Send ONLY the payload (no CONNECT) ----
+        // ---- Process and split payload ----
         if (payload.isNotEmpty()) {
             LogManager.addLog("[ProxyConnector] Sending direct payload (no CONNECT)")
-            // Use proxyHost:proxyPort as the [proxy] replacement
             val proxyString = "$proxyHost:$proxyPort"
             val processedPayload = PayloadProcessor.processPayload(
                 payload,
@@ -216,8 +217,8 @@ class ProxyConnector {
                 proxyString,
                 userAgent
             )
-            LogManager.addLog("[ProxyConnector] Direct payload:\n$processedPayload")
             val parts = PayloadProcessor.splitPayload(processedPayload)
+            LogManager.addLog("[ProxyConnector] Split into ${parts.size} parts")
             for ((index, part) in parts.withIndex()) {
                 output.write(part.toByteArray())
                 output.flush()
@@ -228,8 +229,31 @@ class ProxyConnector {
             LogManager.addLog("[ProxyConnector] Direct payload sent (${parts.size} parts)")
         }
 
-        // ---- Do NOT read any proxy response – there is no proxy ----
-        // The socket is now ready for SSH.
+        // ---- Read server response (if any) ----
+        try {
+            socket.soTimeout = 3000 // 3 second timeout for response
+            val reader = BufferedReader(InputStreamReader(input))
+            var responseLine: String? = null
+            var responseBuilder = StringBuilder()
+            while (reader.ready().also { responseLine = reader.readLine() } && responseLine != null) {
+                responseBuilder.append(responseLine).append("\n")
+            }
+            if (responseBuilder.isNotEmpty()) {
+                LogManager.addLog("[ProxyConnector] Server response:\n$responseBuilder")
+                // If it's a 101 or 200, we can continue
+                // Otherwise, we might still proceed – the socket may still be usable.
+            } else {
+                LogManager.addLog("[ProxyConnector] No response received (server may start SSH immediately)")
+            }
+        } catch (e: java.net.SocketTimeoutException) {
+            LogManager.addLog("[ProxyConnector] Response read timed out – assuming SSH handshake can start")
+        } catch (e: Exception) {
+            LogManager.addLog("[ProxyConnector] Error reading response: ${e.message}")
+        }
+
+        // Reset timeout for SSH (longer)
+        socket.soTimeout = readTimeout
+
         LogManager.addLog("[ProxyConnector] Direct connection established – ready for SSH")
         return socket
     }
