@@ -34,7 +34,6 @@ class ProxyConnector {
         require(proxyHost.isNotEmpty() && proxyPort in 1..65535) { "Invalid proxy address" }
         require(sshHost.isNotEmpty() && sshPort in 1..65535) { "Invalid SSH target" }
 
-        // ---- DIRECT FALLBACK ----
         if (directFallback) {
             LogManager.addLog("[ProxyConnector] Direct fallback mode: connecting to SSH host $sshHost:$sshPort" +
                     if (sslForSSH) " (SSL)" else "")
@@ -44,7 +43,6 @@ class ProxyConnector {
             )
         }
 
-        // ---- NORMAL PROXY MODE ----
         val targetHost = proxyHost
         val targetPort = proxyPort
 
@@ -79,7 +77,6 @@ class ProxyConnector {
         val output = socket.getOutputStream()
         val input = socket.getInputStream()
 
-        // ---- CONNECT request with proxy Host header ----
         val connectRequest = buildConnectRequest(sshHost, sshPort, proxyHost, proxyPort, auth)
         LogManager.addLog("[ProxyConnector] Sending CONNECT request:\n$connectRequest")
         output.write(connectRequest.toByteArray())
@@ -89,7 +86,6 @@ class ProxyConnector {
         var responseLine = reader.readLine() ?: throw ProxyConnectionException("Empty response from proxy")
         LogManager.addLog("[ProxyConnector] Proxy response: $responseLine")
 
-        // ---- Handle redirects ----
         if (responseLine.contains("301") || responseLine.contains("302") ||
             responseLine.contains("303") || responseLine.contains("307")) {
 
@@ -122,7 +118,6 @@ class ProxyConnector {
             }
         }
 
-        // ---- Check success ----
         val isSuccess = responseLine.startsWith("HTTP/1.1 2") ||
                 responseLine.contains("101") ||
                 responseLine.contains("200") ||
@@ -141,7 +136,6 @@ class ProxyConnector {
 
         drainHttpHeaders(reader)
 
-        // ---- Inject payload ----
         if (usePayload && payload.isNotEmpty()) {
             LogManager.addLog("[ProxyConnector] Injecting payload (usePayload=true)")
             val proxyString = "$targetHost:$targetPort"
@@ -171,7 +165,6 @@ class ProxyConnector {
         return socket
     }
 
-    // ---- DIRECT FALLBACK ----
     private fun connectDirect(
         sshHost: String,
         sshPort: Int,
@@ -245,7 +238,7 @@ class ProxyConnector {
     private fun buildConnectRequest(sshHost: String, sshPort: Int, proxyHost: String, proxyPort: Int, auth: ProxyAuth?): String {
         val sb = StringBuilder()
         sb.append("CONNECT $sshHost:$sshPort HTTP/1.1\r\n")
-        sb.append("Host: $proxyHost:$proxyPort\r\n")   // Use proxy host in Host header
+        sb.append("Host: $proxyHost:$proxyPort\r\n")
         sb.append("User-Agent: Mozilla/5.0\r\n")
         sb.append("Connection: keep-alive\r\n")
         if (auth != null) {
