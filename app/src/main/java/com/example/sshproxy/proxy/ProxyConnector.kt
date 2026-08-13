@@ -34,7 +34,7 @@ class ProxyConnector {
         require(proxyHost.isNotEmpty() && proxyPort in 1..65535) { "Invalid proxy address" }
         require(sshHost.isNotEmpty() && sshPort in 1..65535) { "Invalid SSH target" }
 
-        // ---- DIRECT FALLBACK MODE: no CONNECT, send payload directly ----
+        // ---- DIRECT FALLBACK MODE ----
         if (directFallback) {
             LogManager.addLog("[ProxyConnector] Direct fallback mode: connecting to SSH host $sshHost:$sshPort" +
                     if (sslForSSH) " (SSL)" else "")
@@ -44,7 +44,7 @@ class ProxyConnector {
             )
         }
 
-        // ---- NORMAL PROXY MODE: use CONNECT request ----
+        // ---- NORMAL PROXY MODE ----
         val targetHost = proxyHost
         val targetPort = proxyPort
 
@@ -79,8 +79,8 @@ class ProxyConnector {
         val output = socket.getOutputStream()
         val input = socket.getInputStream()
 
-        // Send CONNECT request
-        val connectRequest = buildConnectRequest(sshHost, sshPort, auth)
+        // ---- Send CONNECT request with PROXY Host header ----
+        val connectRequest = buildConnectRequest(sshHost, sshPort, proxyHost, proxyPort, auth)
         LogManager.addLog("[ProxyConnector] Sending CONNECT request:\n$connectRequest")
         output.write(connectRequest.toByteArray())
         output.flush()
@@ -142,7 +142,7 @@ class ProxyConnector {
         // Drain HTTP headers
         drainHttpHeaders(reader)
 
-        // ---- Inject payload ONLY if usePayload is true ----
+        // ---- Inject payload ----
         if (usePayload && payload.isNotEmpty()) {
             LogManager.addLog("[ProxyConnector] Injecting payload (usePayload=true)")
             val proxyString = "$targetHost:$targetPort"
@@ -153,7 +153,6 @@ class ProxyConnector {
                 proxyString,
                 userAgent
             )
-            // Debug: show processed payload (first 200 chars)
             LogManager.addLog("[ProxyConnector] Processed payload (first 200 chars):\n${processedPayload.take(200)}...")
             val parts = PayloadProcessor.splitPayload(processedPayload)
             LogManager.addLog("[ProxyConnector] Split into ${parts.size} parts")
@@ -173,7 +172,7 @@ class ProxyConnector {
         return socket
     }
 
-    // ---- DIRECT FALLBACK: send payload, then return socket immediately (NO READ) ----
+    // ---- DIRECT FALLBACK ----
     private fun connectDirect(
         sshHost: String,
         sshPort: Int,
@@ -215,7 +214,6 @@ class ProxyConnector {
 
         val output = socket.getOutputStream()
 
-        // ---- Send payload ONLY if usePayload is true ----
         if (usePayload && payload.isNotEmpty()) {
             LogManager.addLog("[ProxyConnector] Sending direct payload (no CONNECT, usePayload=true)")
             val proxyString = "$proxyHost:$proxyPort"
@@ -226,7 +224,6 @@ class ProxyConnector {
                 proxyString,
                 userAgent
             )
-            // Debug: show processed payload (first 200 chars)
             LogManager.addLog("[ProxyConnector] Processed payload (first 200 chars):\n${processedPayload.take(200)}...")
             val parts = PayloadProcessor.splitPayload(processedPayload)
             LogManager.addLog("[ProxyConnector] Split into ${parts.size} parts")
@@ -242,16 +239,15 @@ class ProxyConnector {
             LogManager.addLog("[ProxyConnector] Skipping payload (usePayload=false)")
         }
 
-        // ---- DO NOT READ ANY RESPONSE ----
-        // The SSH banner is handled by JSch.
         LogManager.addLog("[ProxyConnector] Direct connection established – returning socket for SSH immediately")
         return socket
     }
 
-    private fun buildConnectRequest(host: String, port: Int, auth: ProxyAuth?): String {
+    // ---- BUILD CONNECT REQUEST WITH PROXY Host HEADER ----
+    private fun buildConnectRequest(sshHost: String, sshPort: Int, proxyHost: String, proxyPort: Int, auth: ProxyAuth?): String {
         val sb = StringBuilder()
-        sb.append("CONNECT $host:$port HTTP/1.1\r\n")
-        sb.append("Host: $host:$port\r\n")
+        sb.append("CONNECT $sshHost:$sshPort HTTP/1.1\r\n")
+        sb.append("Host: $proxyHost:$proxyPort\r\n")   // <-- FIX: Use proxy for Host header
         sb.append("User-Agent: Mozilla/5.0\r\n")
         sb.append("Connection: keep-alive\r\n")
         if (auth != null) {
