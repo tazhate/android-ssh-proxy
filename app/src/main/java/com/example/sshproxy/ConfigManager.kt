@@ -28,8 +28,8 @@ class ConfigManager(private val context: Context) {
         val pingUrl: String,
         val pingInterval: Int,
         val pingTimeout: Int,
+        val usePayload: Boolean = true,
         val proxySsl: Boolean = false
-        // proxySpoofOnly removed
     )
 
     fun saveConfig(config: TunnelConfig) {
