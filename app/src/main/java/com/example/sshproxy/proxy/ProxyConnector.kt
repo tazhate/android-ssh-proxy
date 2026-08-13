@@ -31,10 +31,10 @@ class ProxyConnector {
         require(proxyHost.isNotEmpty() && proxyPort in 1..65535) { "Invalid proxy address" }
         require(sshHost.isNotEmpty() && sshPort in 1..65535) { "Invalid SSH target" }
 
-        // ---- DIRECT FALLBACK MODE: no CONNECT, send payload directly ----
+        // ---- DIRECT FALLBACK MODE: no CONNECT, send payload directly, then read response ----
         if (directFallback) {
             LogManager.addLog("[ProxyConnector] Direct fallback mode: connecting to SSH host $sshHost:$sshPort")
-            return connectDirect(sshHost, sshPort, proxyHost, proxyPort, payload, userAgent, connectTimeout, readTimeout, splitDelayMs, useSsl)
+            return connectDirect(sshHost, sshPort, proxyHost, proxyPort, payload, userAgent, connectTimeout, splitDelayMs, useSsl)
         }
 
         // ---- NORMAL PROXY MODE: use CONNECT request ----
@@ -171,7 +171,6 @@ class ProxyConnector {
         payload: String,
         userAgent: String,
         connectTimeout: Int,
-        readTimeout: Int,
         splitDelayMs: Long,
         useSsl: Boolean
     ): Socket {
@@ -195,7 +194,6 @@ class ProxyConnector {
             if (!useSsl) {
                 socket.connect(InetSocketAddress(sshHost, sshPort), connectTimeout)
             }
-            socket.soTimeout = readTimeout
             socket.tcpNoDelay = true
             socket.keepAlive = true
         } catch (e: Exception) {
@@ -204,9 +202,8 @@ class ProxyConnector {
         }
 
         val output = socket.getOutputStream()
-        val input = socket.getInputStream()
 
-        // ---- Process and split payload ----
+        // ---- Process and send payload ----
         if (payload.isNotEmpty()) {
             LogManager.addLog("[ProxyConnector] Sending direct payload (no CONNECT)")
             val proxyString = "$proxyHost:$proxyPort"
@@ -229,28 +226,41 @@ class ProxyConnector {
             LogManager.addLog("[ProxyConnector] Direct payload sent (${parts.size} parts)")
         }
 
-        // ---- Read server response (if any) ----
+        // ---- READ THE SERVER'S RESPONSE (DO NOT SKIP) ----
         try {
-            socket.soTimeout = 3000 // 3 second timeout for response
-            val reader = BufferedReader(InputStreamReader(input))
-            var responseLine: String? = null
-            val responseBuilder = StringBuilder()
-            while (reader.ready().also { responseLine = reader.readLine() } && responseLine != null) {
-                responseBuilder.append(responseLine).append("\n")
+            socket.soTimeout = 5000 // 5-second timeout for the response
+            val reader = BufferedReader(InputStreamReader(socket.inputStream))
+            var line: String?
+            var sshBannerDetected = false
+            LogManager.addLog("[ProxyConnector] Reading server response...")
+
+            while (reader.ready().also { line = reader.readLine() } && line != null) {
+                LogManager.addLog("[ProxyConnector] Server response: $line")
+                if (line!!.startsWith("SSH-2.0")) {
+                    sshBannerDetected = true
+                    LogManager.addLog("[ProxyConnector] SSH banner detected – stopping response read")
+                    break
+                }
+                if (line!!.isEmpty()) {
+                    LogManager.addLog("[ProxyConnector] End of HTTP headers")
+                    break
+                }
             }
-            if (responseBuilder.isNotEmpty()) {
-                LogManager.addLog("[ProxyConnector] Server response:\n$responseBuilder")
+
+            if (sshBannerDetected) {
+                LogManager.addLog("[ProxyConnector] SSH banner found – socket is ready")
             } else {
-                LogManager.addLog("[ProxyConnector] No response received (server may start SSH immediately)")
+                LogManager.addLog("[ProxyConnector] HTTP response consumed – socket is ready for SSH")
             }
+
         } catch (e: java.net.SocketTimeoutException) {
             LogManager.addLog("[ProxyConnector] Response read timed out – assuming SSH handshake can start")
         } catch (e: Exception) {
-            LogManager.addLog("[ProxyConnector] Error reading response: ${e.message}")
+            LogManager.addLog("[ProxyConnector] Error reading response: ${e.message} – continuing")
         }
 
-        // Reset timeout for SSH (longer)
-        socket.soTimeout = readTimeout
+        // ---- Reset timeout for SSH (longer) ----
+        socket.soTimeout = 30000
 
         LogManager.addLog("[ProxyConnector] Direct connection established – ready for SSH")
         return socket
