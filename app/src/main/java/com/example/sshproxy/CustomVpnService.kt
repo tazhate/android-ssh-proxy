@@ -257,7 +257,7 @@ class CustomVpnService : VpnService() {
         val session = jsch.getSession(sshUser, sshHost, sshPort.toInt())
         session.setPassword(sshPass)
         session.setConfig("StrictHostKeyChecking", "no")
-        session.setConfig("ServerAliveInterval", "10")
+        session.setConfig("ServerAliveInterval", "5")
         session.setConfig("ServerAliveCountMax", "3")
         session.setConfig("TCPKeepAlive", "yes")
 
