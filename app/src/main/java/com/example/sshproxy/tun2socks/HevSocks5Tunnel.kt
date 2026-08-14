@@ -3,7 +3,7 @@ package com.example.sshproxy.tun2socks
 import com.example.sshproxy.LogManager
 
 object HevSocks5Tunnel {
-    // Native method signature matches the .so file: (tun_fd, "127.0.0.1:port", mtu)
+    // Native signature: int hev_socks5_tunnel_run(int tun_fd, const char* socks_addr, int mtu)
     external fun start(tunFd: Int, socksAddr: String, mtu: Int): Int
     external fun stop(): Int
 
