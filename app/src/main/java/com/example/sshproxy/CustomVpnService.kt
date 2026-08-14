@@ -14,7 +14,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.example.sshproxy.payload.PayloadProcessor
 import com.example.sshproxy.proxy.ConnectionStrategy
 import com.example.sshproxy.proxy.ProxyConnectionException
-import com.example.sshproxy.tun2socks.HevSocks5Tunnel   // <-- only ONE import
+import hev.sockstun.TProxyService   // <-- NEW IMPORT
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
@@ -86,7 +86,7 @@ class CustomVpnService : VpnService() {
     private var receiveBuffer: Int = 32768
     private var pingUrl: String = "https://dns.google"
     private var pingInterval: Int = 2000
-    private var pingTimeout: Int = 10000 // 10s default
+    private var pingTimeout: Int = 10000
 
     override fun onCreate() {
         super.onCreate()
@@ -327,11 +327,11 @@ class CustomVpnService : VpnService() {
         }
         LogManager.addLog("[tproxy] Config written to $configPath")
 
-        // 4. Start hev-socks5-tunnel with the config file and TUN FD
+        // 4. Start hev-socks5-tunnel using the correct class
         val tunFd = vpnInterface!!.fd
         try {
             LogManager.addLog("[hev-socks5-tunnel] Starting with config=$configPath, tunFd=$tunFd")
-            val result = HevSocks5Tunnel.TProxyStartService(configPath, tunFd)
+            val result = TProxyService.TProxyStartService(configPath, tunFd)  // <-- UPDATED
             if (result) {
                 LogManager.addLog("[hev-socks5-tunnel] Started successfully")
             } else {
@@ -384,7 +384,7 @@ class CustomVpnService : VpnService() {
 
         // Stop hev-socks5-tunnel
         try {
-            HevSocks5Tunnel.TProxyStopService()
+            TProxyService.TProxyStopService()   // <-- UPDATED
             LogManager.addLog("[hev-socks5-tunnel] Stopped")
         } catch (e: Exception) {
             LogManager.addLog("[ERROR] Failed to stop hev-socks5-tunnel: ${e.message}")
