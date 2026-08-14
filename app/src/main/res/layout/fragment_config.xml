@@ -20,6 +20,16 @@
             android:gravity="center"
             android:layout_marginBottom="16dp"
             android:textColor="#2196F3" />
+        <!-- Local IP Display -->
+<TextView
+    android:id="@+id/localIpText"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:text="Local IP: detecting..."
+    android:gravity="center"
+    android:textSize="14sp"
+    android:textColor="#555555"
+    android:layout_marginBottom="16dp" />
 
         <!-- SSH Details -->
         <TextView
