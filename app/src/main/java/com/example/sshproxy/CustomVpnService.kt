@@ -18,6 +18,7 @@ import com.example.sshproxy.proxy.ProxyConnectionException
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
+import com.jcraft.jsch.ChannelShell
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -47,6 +48,9 @@ class CustomVpnService : VpnService() {
     val state: StateFlow<VpnState> = _state.asStateFlow()
 
     private var sshSession: Session? = null
+    private var sshChannel: ChannelShell? = null
+    private var channelInputStream: java.io.InputStream? = null
+    private var channelOutputStream: java.io.OutputStream? = null
     private var tunnelSocket: Socket? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private var trafficRouter: TrafficRouter? = null
@@ -241,6 +245,7 @@ class CustomVpnService : VpnService() {
 
         establishSSH(compressionFailed)
 
+        // SSH authenticated and channel opened
         isConnected.set(true)
         _state.value = VpnState.CONNECTED
         reconnectAttempts = 0
@@ -261,24 +266,44 @@ class CustomVpnService : VpnService() {
         session.setConfig("ServerAliveCountMax", "3")
         session.setConfig("TCPKeepAlive", "yes")
 
+        // Force compression OFF
         session.setConfig("compression.c2s", "none")
         session.setConfig("compression.s2c", "none")
         LogManager.addLog("SSH compression forced OFF (server compatibility)")
 
+        // Use the same socket for SSH
         session.setSocketFactory(object : com.jcraft.jsch.SocketFactory {
             override fun createSocket(host: String?, port: Int): Socket = tunnelSocket ?: Socket(host, port)
             override fun getInputStream(socket: Socket) = socket.getInputStream()
             override fun getOutputStream(socket: Socket) = socket.getOutputStream()
         })
 
-        val delayMs = 1500L
-        LogManager.addLog("Waiting ${delayMs}ms before SSH handshake...")
-        Thread.sleep(delayMs)
-
+        // No delay before connect – start immediately
         session.connect(25000)
         if (session.isConnected) {
             sshSession = session
             LogManager.addLog("SSH authenticated")
+
+            // ---- OPEN A SHELL CHANNEL TO KEEP THE SESSION ALIVE ----
+            try {
+                val channel = session.openChannel("shell") as ChannelShell
+                channel.setPty(false)   // No pseudo‑terminal – we only need a data pipe
+                channel.connect()
+                LogManager.addLog("Shell channel opened")
+
+                // Store the channel streams for TrafficRouter
+                sshChannel = channel
+                channelInputStream = channel.inputStream
+                channelOutputStream = channel.outputStream
+
+            } catch (e: Exception) {
+                LogManager.addLog("[ERROR] Failed to open shell channel: ${e.message}")
+                // Fallback: use socket streams directly (may not keep session alive)
+                channelInputStream = tunnelSocket?.getInputStream()
+                channelOutputStream = tunnelSocket?.getOutputStream()
+            }
+
+            // Proceed with VPN setup (will be called after this function returns)
         } else {
             throw JSchException("SSH connection failed")
         }
@@ -293,6 +318,8 @@ class CustomVpnService : VpnService() {
 
         trafficRouter?.stop()
         trafficRouter = null
+        sshChannel?.disconnect()
+        sshChannel = null
         sshSession?.disconnect()
         sshSession = null
         tunnelSocket?.close()
@@ -357,14 +384,23 @@ class CustomVpnService : VpnService() {
 
         LogManager.addLog("Local IP: 10.0.0.2, DNS: $dnsPrimary / $dnsSecondary, MTU: $mtu")
 
-        trafficRouter = TrafficRouter(
-            vpnInterface!!.fileDescriptor,
-            tunnelSocket!!,
-            sendBuffer,
-            receiveBuffer
-        )
-        trafficRouter?.start()
-        LogManager.addLog("Traffic router started")
+        // Use channel streams if available, else fallback to socket streams
+        val inputStream = channelInputStream ?: tunnelSocket?.getInputStream()
+        val outputStream = channelOutputStream ?: tunnelSocket?.getOutputStream()
+
+        if (inputStream != null && outputStream != null) {
+            trafficRouter = TrafficRouter(
+                vpnInterface!!.fileDescriptor,
+                inputStream,
+                outputStream,
+                sendBuffer,
+                receiveBuffer
+            )
+            trafficRouter?.start()
+            LogManager.addLog("Traffic router started (using ${if (sshChannel != null) "shell channel" else "raw socket"})")
+        } else {
+            LogManager.addLog("[ERROR] Could not obtain streams for traffic router")
+        }
     }
 
     private fun startPing() {
