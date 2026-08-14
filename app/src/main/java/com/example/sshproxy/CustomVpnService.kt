@@ -12,13 +12,11 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.example.sshproxy.payload.PayloadProcessor
-import com.example.sshproxy.network.TrafficRouter
 import com.example.sshproxy.proxy.ConnectionStrategy
 import com.example.sshproxy.proxy.ProxyConnectionException
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
-import com.jcraft.jsch.ChannelShell
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -26,6 +24,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
+import com.github.cowby123.tun2socks.Tun2Socks   // <-- NEW import
 
 class CustomVpnService : VpnService() {
 
@@ -48,12 +47,9 @@ class CustomVpnService : VpnService() {
     val state: StateFlow<VpnState> = _state.asStateFlow()
 
     private var sshSession: Session? = null
-    private var sshChannel: ChannelShell? = null
-    private var channelInputStream: java.io.InputStream? = null
-    private var channelOutputStream: java.io.OutputStream? = null
+    private var socksProxy: LocalSocks5Proxy? = null   // <-- NEW
     private var tunnelSocket: Socket? = null
     private var vpnInterface: ParcelFileDescriptor? = null
-    private var trafficRouter: TrafficRouter? = null
     private val isConnected = AtomicBoolean(false)
     private var pingJob: Job? = null
     private var reconnectJob: Job? = null
@@ -64,6 +60,7 @@ class CustomVpnService : VpnService() {
     private val MAX_RECONNECT_ATTEMPTS = 10
     private val BASE_RECONNECT_DELAY_MS = 2000L
 
+    // --- Config (unchanged) ---
     private var sshHost: String = ""
     private var sshPort: String = ""
     private var sshUser: String = ""
@@ -86,8 +83,6 @@ class CustomVpnService : VpnService() {
     private var pingUrl: String = "https://dns.google"
     private var pingInterval: Int = 2000
     private var pingTimeout: Int = 5000
-
-    private val USE_TRAFFIC_ROUTER = true
 
     override fun onCreate() {
         super.onCreate()
@@ -117,6 +112,7 @@ class CustomVpnService : VpnService() {
     }
 
     private fun extractConfig(intent: Intent) {
+        // ... (same as before) ...
         sshHost = intent.getStringExtra("sshHost") ?: ""
         sshPort = intent.getStringExtra("sshPort") ?: ""
         sshUser = intent.getStringExtra("sshUser") ?: ""
@@ -139,9 +135,7 @@ class CustomVpnService : VpnService() {
         pingUrl = intent.getStringExtra("pingUrl") ?: "https://dns.google"
         pingInterval = intent.getIntExtra("pingInterval", 2000)
         pingTimeout = intent.getIntExtra("pingTimeout", 5000)
-
-        LogManager.addLog("[DEBUG] Payload received in service: ${payload.take(100)}...")
-        LogManager.addLog("[DEBUG] Payload length: ${payload.length}")
+        LogManager.addLog("[DEBUG] Payload received: ${payload.take(100)}...")
     }
 
     private fun connect() {
@@ -149,13 +143,11 @@ class CustomVpnService : VpnService() {
             LogManager.addLog("[WARN] Already connecting or connected")
             return
         }
-
         if (sshHost.isEmpty() || sshPort.isEmpty() || sshUser.isEmpty() || sshPass.isEmpty()) {
             LogManager.addLog("[ERROR] Missing SSH details")
             _state.value = VpnState.ERROR
             return
         }
-
         _state.value = VpnState.CONNECTING
         acquireWakeLock()
         showNotification("Connecting...")
@@ -215,10 +207,6 @@ class CustomVpnService : VpnService() {
 
     private suspend fun doConnect(compressionFailed: Boolean) {
         val strategy = ConnectionStrategy()
-
-        LogManager.addLog("[DEBUG] doConnect: payload length = ${payload.length}")
-        LogManager.addLog("[DEBUG] doConnect: usePayload = $usePayload")
-
         val socket = try {
             strategy.establishTunnel(
                 proxyHost = proxyHost.ifEmpty { sshHost },
@@ -243,15 +231,16 @@ class CustomVpnService : VpnService() {
         tunnelSocket = socket
         LogManager.addLog("connected to socket ${socket.remoteSocketAddress}")
 
+        // Establish SSH session (no shell channel)
         establishSSH(compressionFailed)
 
-        // SSH authenticated and channel opened
+        // Once SSH is authenticated, we set up the VPN and start the proxy + tun2socks
         isConnected.set(true)
         _state.value = VpnState.CONNECTED
         reconnectAttempts = 0
         sendStatus("Connected")
         showNotification("Connected ✓")
-        setupVpn()
+        setupVpn()     // <-- this now starts SOCKS5 + tun2socks
         startPing()
 
         if (alwaysReconnect) startReconnectMonitor()
@@ -262,7 +251,7 @@ class CustomVpnService : VpnService() {
         val session = jsch.getSession(sshUser, sshHost, sshPort.toInt())
         session.setPassword(sshPass)
         session.setConfig("StrictHostKeyChecking", "no")
-        session.setConfig("ServerAliveInterval", "5")
+        session.setConfig("ServerAliveInterval", "30")   // keep-alive
         session.setConfig("ServerAliveCountMax", "3")
         session.setConfig("TCPKeepAlive", "yes")
 
@@ -271,42 +260,67 @@ class CustomVpnService : VpnService() {
         session.setConfig("compression.s2c", "none")
         LogManager.addLog("SSH compression forced OFF (server compatibility)")
 
-        // Use the same socket for SSH
         session.setSocketFactory(object : com.jcraft.jsch.SocketFactory {
             override fun createSocket(host: String?, port: Int): Socket = tunnelSocket ?: Socket(host, port)
             override fun getInputStream(socket: Socket) = socket.getInputStream()
             override fun getOutputStream(socket: Socket) = socket.getOutputStream()
         })
 
-        // No delay before connect – start immediately
+        // Connect (no delay)
         session.connect(25000)
         if (session.isConnected) {
             sshSession = session
             LogManager.addLog("SSH authenticated")
-
-            // ---- OPEN A SHELL CHANNEL TO KEEP THE SESSION ALIVE ----
-            try {
-                val channel = session.openChannel("shell") as ChannelShell
-                channel.setPty(false)   // No pseudo‑terminal – we only need a data pipe
-                channel.connect()
-                LogManager.addLog("Shell channel opened")
-
-                // Store the channel streams for TrafficRouter
-                sshChannel = channel
-                channelInputStream = channel.inputStream
-                channelOutputStream = channel.outputStream
-
-            } catch (e: Exception) {
-                LogManager.addLog("[ERROR] Failed to open shell channel: ${e.message}")
-                // Fallback: use socket streams directly (may not keep session alive)
-                channelInputStream = tunnelSocket?.getInputStream()
-                channelOutputStream = tunnelSocket?.getOutputStream()
-            }
-
-            // Proceed with VPN setup (will be called after this function returns)
+            // DO NOT open a shell channel – SOCKS5 + tun2socks will handle traffic.
         } else {
             throw JSchException("SSH connection failed")
         }
+    }
+
+    private fun setupVpn() {
+        if (tunnelSocket == null || tunnelSocket!!.isClosed) {
+            LogManager.addLog("[ERROR] Tunnel socket is closed before VPN setup")
+            return
+        }
+
+        // 1. Create TUN interface
+        vpnInterface = Builder()
+            .addAddress("10.0.0.2", 32)
+            .addRoute("0.0.0.0", 0)
+            .addRoute("::", 0)
+            .addDnsServer(dnsPrimary)
+            .addDnsServer(dnsSecondary)
+            .setSession("Gtunnel")
+            .setBlocking(true)
+            .setMtu(mtu)
+            .establish()
+
+        if (vpnInterface == null) {
+            LogManager.addLog("[ERROR] VPN interface creation failed")
+            return
+        }
+        LogManager.addLog("Local IP: 10.0.0.2, DNS: $dnsPrimary / $dnsSecondary, MTU: $mtu")
+
+        // 2. Start SOCKS5 proxy over SSH
+        val proxy = LocalSocks5Proxy(sshSession!!)
+        val socksPort = proxy.start()
+        socksProxy = proxy
+        LogManager.addLog("[SOCKS5] Proxy running on 127.0.0.1:$socksPort")
+
+        // 3. Start tun2socks to forward TUN traffic to the SOCKS5 proxy
+        val tunFd = vpnInterface!!.fileDescriptor
+        try {
+            Tun2Socks.start(tunFd, "127.0.0.1", socksPort, mtu)
+            LogManager.addLog("[tun2socks] Started successfully")
+        } catch (e: Exception) {
+            LogManager.addLog("[ERROR] tun2socks failed: ${e.message}")
+            // Fallback: you could optionally start the old TrafficRouter here
+            // but we will just fail
+            stopSelf()
+            return
+        }
+
+        LogManager.addLog("VPN and SOCKS5 tunnel ready")
     }
 
     private fun disconnect() {
@@ -316,10 +330,10 @@ class CustomVpnService : VpnService() {
         pingJob?.cancel()
         stateJob?.cancel()
 
-        trafficRouter?.stop()
-        trafficRouter = null
-        sshChannel?.disconnect()
-        sshChannel = null
+        // Stop tun2socks (not explicitly provided by library, but we can close the TUN)
+        // The library may not have a stop method; we rely on closing the socket and TUN.
+        socksProxy?.stop()
+        socksProxy = null
         sshSession?.disconnect()
         sshSession = null
         tunnelSocket?.close()
@@ -360,49 +374,7 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    private fun setupVpn() {
-        if (tunnelSocket == null || tunnelSocket!!.isClosed) {
-            LogManager.addLog("[ERROR] Tunnel socket is closed before VPN setup")
-            return
-        }
-
-        vpnInterface = Builder()
-            .addAddress("10.0.0.2", 32)
-            .addRoute("0.0.0.0", 0)
-            .addRoute("::", 0)
-            .addDnsServer(dnsPrimary)
-            .addDnsServer(dnsSecondary)
-            .setSession("Gtunnel")
-            .setBlocking(true)
-            .setMtu(mtu)
-            .establish()
-
-        if (vpnInterface == null) {
-            LogManager.addLog("[ERROR] VPN interface creation failed")
-            return
-        }
-
-        LogManager.addLog("Local IP: 10.0.0.2, DNS: $dnsPrimary / $dnsSecondary, MTU: $mtu")
-
-        // Use channel streams if available, else fallback to socket streams
-        val inputStream = channelInputStream ?: tunnelSocket?.getInputStream()
-        val outputStream = channelOutputStream ?: tunnelSocket?.getOutputStream()
-
-        if (inputStream != null && outputStream != null) {
-            trafficRouter = TrafficRouter(
-                vpnInterface!!.fileDescriptor,
-                inputStream,
-                outputStream,
-                sendBuffer,
-                receiveBuffer
-            )
-            trafficRouter?.start()
-            LogManager.addLog("Traffic router started (using ${if (sshChannel != null) "shell channel" else "raw socket"})")
-        } else {
-            LogManager.addLog("[ERROR] Could not obtain streams for traffic router")
-        }
-    }
-
+    // --- Ping (unchanged) ---
     private fun startPing() {
         pingJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected.get()) {
@@ -426,6 +398,7 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // --- Remaining helper methods (unchanged) ---
     private fun startReconnectMonitor() {
         stateJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected.get()) {
