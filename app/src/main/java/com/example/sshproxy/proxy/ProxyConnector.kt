@@ -34,7 +34,6 @@ class ProxyConnector {
         require(proxyHost.isNotEmpty() && proxyPort in 1..65535) { "Invalid proxy address" }
         require(sshHost.isNotEmpty() && sshPort in 1..65535) { "Invalid SSH target" }
 
-        // ---- DIRECT FALLBACK (only if proxy is unreachable) ----
         if (directFallback) {
             LogManager.addLog("[ProxyConnector] Direct fallback mode: connecting to SSH host $sshHost:$sshPort" +
                     if (sslForSSH) " (SSL)" else "")
@@ -44,7 +43,6 @@ class ProxyConnector {
             )
         }
 
-        // ---- NORMAL MODE: connect to proxy and send payload directly (NO CONNECT) ----
         val targetHost = proxyHost
         val targetPort = proxyPort
 
@@ -80,7 +78,6 @@ class ProxyConnector {
         val output = socket.getOutputStream()
         val input = socket.getInputStream()
 
-        // ---- Send payload directly (NO CONNECT) ----
         if (usePayload && payload.isNotEmpty()) {
             LogManager.addLog("[ProxyConnector] Sending payload directly to proxy (no CONNECT)")
             val proxyString = "$targetHost:$targetPort"
@@ -106,13 +103,17 @@ class ProxyConnector {
             LogManager.addLog("[ProxyConnector] No payload to send (usePayload=false)")
         }
 
-        // ---- Read the server response ----
+        // ---- READ THE RESPONSE (block with timeout) ----
         try {
+            // Increase timeout for reading the response
+            socket.soTimeout = 10000 // 10 seconds for the response
             val reader = BufferedReader(InputStreamReader(input))
-            var statusLine: String? = null
             var line: String?
+            var statusLine: String? = null
+            var sshBannerDetected = false
             LogManager.addLog("[ProxyConnector] Reading server response...")
 
+            // Read until we hit an empty line, SSH banner, or timeout
             while (reader.ready().also { line = reader.readLine() } && line != null) {
                 if (statusLine == null) {
                     statusLine = line
@@ -121,7 +122,8 @@ class ProxyConnector {
                     LogManager.addLog("[ProxyConnector] Response header: $line")
                 }
                 if (line!!.startsWith("SSH-2.0")) {
-                    LogManager.addLog("[ProxyConnector] SSH banner detected – stopping response read")
+                    sshBannerDetected = true
+                    LogManager.addLog("[ProxyConnector] SSH banner detected – stopping read")
                     break
                 }
                 if (line!!.isEmpty()) {
@@ -130,7 +132,27 @@ class ProxyConnector {
                 }
             }
 
-            // Accept 2xx, 3xx, 101 – only fail on 4xx and 5xx
+            // If we didn't get a response, wait a bit longer (some servers are slow)
+            if (statusLine == null && !sshBannerDetected) {
+                // Try reading one more line with a short wait
+                Thread.sleep(500)
+                line = reader.readLine()
+                if (line != null) {
+                    statusLine = line
+                    LogManager.addLog("[ProxyConnector] Delayed server status: $statusLine")
+                    // Continue reading headers until empty or SSH banner
+                    while (reader.ready().also { line = reader.readLine() } && line != null) {
+                        LogManager.addLog("[ProxyConnector] Delayed header: $line")
+                        if (line!!.startsWith("SSH-2.0")) {
+                            sshBannerDetected = true
+                            break
+                        }
+                        if (line!!.isEmpty()) break
+                    }
+                }
+            }
+
+            // Validate response
             if (statusLine != null) {
                 val isAccepted = statusLine.startsWith("HTTP/1.1 2") ||
                         statusLine.startsWith("HTTP/1.1 3") ||
@@ -141,13 +163,9 @@ class ProxyConnector {
                     socket.close()
                     throw ProxyConnectionException("Server returned $statusLine")
                 }
-                if (statusLine.startsWith("HTTP/1.1 3")) {
-                    LogManager.addLog("[ProxyConnector] Redirect (3xx) accepted – continuing")
-                } else {
-                    LogManager.addLog("[ProxyConnector] Server status accepted ($statusLine) – continuing to SSH")
-                }
-            } else {
-                LogManager.addLog("[ProxyConnector] No response received – assuming success")
+                LogManager.addLog("[ProxyConnector] Server status accepted ($statusLine) – continuing to SSH")
+            } else if (!sshBannerDetected) {
+                LogManager.addLog("[ProxyConnector] No HTTP response – but socket may still be usable (SSH will start)")
             }
 
         } catch (e: java.net.SocketTimeoutException) {
@@ -155,6 +173,9 @@ class ProxyConnector {
         } catch (e: Exception) {
             LogManager.addLog("[ProxyConnector] Error reading response: ${e.message} – continuing")
         }
+
+        // ---- Reset timeout for SSH (longer) ----
+        socket.soTimeout = 30000
 
         LogManager.addLog("[ProxyConnector] Tunnel established successfully")
         return socket
