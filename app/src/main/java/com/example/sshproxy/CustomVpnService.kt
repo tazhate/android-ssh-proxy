@@ -49,6 +49,7 @@ class CustomVpnService : VpnService() {
     // Core members
     private var sshSession: Session? = null
     private var socksProxy: LocalSocks5Proxy? = null
+    private var socksPort: Int = 0
     private var tunnelSocket: Socket? = null
     private var vpnInterface: ParcelFileDescriptor? = null
     private val isConnected = AtomicBoolean(false)
@@ -233,12 +234,20 @@ class CustomVpnService : VpnService() {
 
         establishSSH(compressionFailed)
 
+        // Once SSH is authenticated, set up VPN and start SOCKS5 + tun2socks
         isConnected.set(true)
         _state.value = VpnState.CONNECTED
         reconnectAttempts = 0
         sendStatus("Connected")
         showNotification("Connected ✓")
-        setupVpn()
+        try {
+            setupVpn()
+        } catch (e: Exception) {
+            LogManager.addLog("[ERROR] setupVpn crashed: ${e.message}")
+            e.printStackTrace()
+            stopSelf()
+            return
+        }
         startPing()
 
         if (alwaysReconnect) startReconnectMonitor()
@@ -299,15 +308,22 @@ class CustomVpnService : VpnService() {
         LogManager.addLog("Local IP: 10.0.0.2, DNS: $dnsPrimary / $dnsSecondary, MTU: $mtu")
 
         // 2. Start SOCKS5 proxy over SSH
-        val proxy = LocalSocks5Proxy(sshSession!!)
-        val socksPort = proxy.start()
-        socksProxy = proxy
-        LogManager.addLog("[SOCKS5] Proxy running on 127.0.0.1:$socksPort")
-
-        // 3. Start hev-socks5-tunnel – use .fd to get the integer file descriptor
-        val tunFd = vpnInterface!!.fd   // <-- FIXED: .fd instead of .fileDescriptor
         try {
-            val result = HevSocks5Tunnel.start(tunFd, "127.0.0.1", socksPort, mtu)
+            val proxy = LocalSocks5Proxy(sshSession!!)
+            socksPort = proxy.start()
+            socksProxy = proxy
+            LogManager.addLog("[SOCKS5] Proxy running on 127.0.0.1:$socksPort")
+        } catch (e: Exception) {
+            LogManager.addLog("[ERROR] SOCKS5 proxy failed: ${e.message}")
+            throw e
+        }
+
+        // 3. Start hev-socks5-tunnel – use the correct signature (tun_fd, "127.0.0.1:port", mtu)
+        val tunFd = vpnInterface!!.fd
+        val socksAddr = "127.0.0.1:$socksPort"
+        try {
+            LogManager.addLog("[hev-socks5-tunnel] Starting with tunFd=$tunFd, socksAddr=$socksAddr, mtu=$mtu")
+            val result = HevSocks5Tunnel.start(tunFd, socksAddr, mtu)
             if (result == 0) {
                 LogManager.addLog("[hev-socks5-tunnel] Started successfully")
             } else {
@@ -315,10 +331,12 @@ class CustomVpnService : VpnService() {
                 stopSelf()
                 return
             }
+        } catch (e: UnsatisfiedLinkError) {
+            LogManager.addLog("[ERROR] Native library not loaded: ${e.message}")
+            throw e
         } catch (e: Exception) {
             LogManager.addLog("[ERROR] hev-socks5-tunnel exception: ${e.message}")
-            stopSelf()
-            return
+            throw e
         }
 
         LogManager.addLog("VPN and SOCKS5 tunnel ready")
@@ -374,7 +392,7 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // --- Ping (unchanged) ---
+    // --- Ping ---
     private fun startPing() {
         pingJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected.get()) {
@@ -398,7 +416,7 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // --- Helper methods (unchanged) ---
+    // --- Helper methods ---
     private fun startReconnectMonitor() {
         stateJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected.get()) {
