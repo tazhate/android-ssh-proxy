@@ -20,6 +20,8 @@ import android.widget.TextView
 import androidx.core.content.ContextCompat
 import androidx.fragment.app.Fragment
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
+import java.net.Inet4Address
+import java.net.NetworkInterface
 
 class ConfigFragment : Fragment() {
 
@@ -42,6 +44,7 @@ class ConfigFragment : Fragment() {
     private lateinit var pingTimeoutInput: EditText
     private lateinit var toggleButton: Button
     private lateinit var statusText: TextView
+    private lateinit var localIpText: TextView
 
     private var currentSshHost: String = ""
     private var currentSshPort: String = ""
@@ -111,6 +114,10 @@ class ConfigFragment : Fragment() {
         pingTimeoutInput = view.findViewById(R.id.pingTimeoutInput)
         toggleButton = view.findViewById(R.id.toggleButton)
         statusText = view.findViewById(R.id.statusText)
+        localIpText = view.findViewById(R.id.localIpText)
+
+        // Show local IP
+        updateLocalIp()
 
         proxyInput.addTextChangedListener(object : TextWatcher {
             override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
@@ -137,6 +144,36 @@ class ConfigFragment : Fragment() {
         LocalBroadcastManager.getInstance(requireContext()).registerReceiver(statusReceiver, IntentFilter("VPN_STATUS"))
 
         return view
+    }
+
+    override fun onResume() {
+        super.onResume()
+        // Refresh local IP when the fragment is resumed
+        updateLocalIp()
+    }
+
+    private fun updateLocalIp() {
+        val ip = getLocalIpAddress()
+        localIpText.text = if (ip != null) "Local IP: $ip" else "Local IP: not available"
+    }
+
+    private fun getLocalIpAddress(): String? {
+        try {
+            val interfaces = NetworkInterface.getNetworkInterfaces()
+            while (interfaces.hasMoreElements()) {
+                val intf = interfaces.nextElement()
+                val addresses = intf.inetAddresses
+                while (addresses.hasMoreElements()) {
+                    val addr = addresses.nextElement()
+                    if (!addr.isLoopbackAddress && addr is Inet4Address) {
+                        return addr.hostAddress
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            LogManager.addLog("[ERROR] Failed to get local IP: ${e.message}")
+        }
+        return null
     }
 
     private fun connectAction() {
