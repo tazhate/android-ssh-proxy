@@ -1,4 +1,4 @@
-package com.example.sshproxy
+package com.example.sshproxy.tun2socks
 
 import android.app.NotificationChannel
 import android.app.NotificationManager
