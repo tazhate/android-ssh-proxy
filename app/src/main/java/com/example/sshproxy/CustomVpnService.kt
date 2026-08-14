@@ -22,6 +22,8 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.io.File
+import java.io.FileOutputStream
 import java.net.Socket
 import java.net.SocketTimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
@@ -234,7 +236,6 @@ class CustomVpnService : VpnService() {
 
         establishSSH(compressionFailed)
 
-        // Once SSH is authenticated, set up VPN and start SOCKS5 + tun2socks
         isConnected.set(true)
         _state.value = VpnState.CONNECTED
         reconnectAttempts = 0
@@ -318,16 +319,24 @@ class CustomVpnService : VpnService() {
             throw e
         }
 
-        // 3. Start hev-socks5-tunnel – use the correct signature (tun_fd, "127.0.0.1:port", mtu)
+        // 3. Write tproxy config file
+        val configPath = createTProxyConfig(socksPort, mtu)
+        if (configPath == null) {
+            LogManager.addLog("[ERROR] Failed to create tproxy config")
+            stopSelf()
+            return
+        }
+        LogManager.addLog("[tproxy] Config written to $configPath")
+
+        // 4. Start hev-socks5-tunnel with the config file and TUN FD
         val tunFd = vpnInterface!!.fd
-        val socksAddr = "127.0.0.1:$socksPort"
         try {
-            LogManager.addLog("[hev-socks5-tunnel] Starting with tunFd=$tunFd, socksAddr=$socksAddr, mtu=$mtu")
-            val result = HevSocks5Tunnel.start(tunFd, socksAddr, mtu)
-            if (result == 0) {
+            LogManager.addLog("[hev-socks5-tunnel] Starting with config=$configPath, tunFd=$tunFd")
+            val result = HevSocks5Tunnel.TProxyStartService(configPath, tunFd)
+            if (result) {
                 LogManager.addLog("[hev-socks5-tunnel] Started successfully")
             } else {
-                LogManager.addLog("[ERROR] hev-socks5-tunnel start failed: $result")
+                LogManager.addLog("[ERROR] hev-socks5-tunnel start failed")
                 stopSelf()
                 return
             }
@@ -342,12 +351,45 @@ class CustomVpnService : VpnService() {
         LogManager.addLog("VPN and SOCKS5 tunnel ready")
     }
 
+    private fun createTProxyConfig(socksPort: Int, mtu: Int): String? {
+        return try {
+            val configFile = File(cacheDir, "tproxy.conf")
+            configFile.createNewFile()
+            FileOutputStream(configFile).use { fos ->
+                val config = """
+                    misc:
+                      task-stack-size: 65536
+                    tunnel:
+                      mtu: $mtu
+                      icmp: 'reply'
+                    socks5:
+                      port: $socksPort
+                      address: '127.0.0.1'
+                      udp: 'tcp'
+                """.trimIndent()
+                fos.write(config.toByteArray())
+            }
+            configFile.absolutePath
+        } catch (e: Exception) {
+            LogManager.addLog("[ERROR] Failed to create tproxy config: ${e.message}")
+            null
+        }
+    }
+
     private fun disconnect() {
         _state.value = VpnState.DISCONNECTING
         isConnected.set(false)
         reconnectJob?.cancel()
         pingJob?.cancel()
         stateJob?.cancel()
+
+        // Stop hev-socks5-tunnel
+        try {
+            HevSocks5Tunnel.TProxyStopService()
+            LogManager.addLog("[hev-socks5-tunnel] Stopped")
+        } catch (e: Exception) {
+            LogManager.addLog("[ERROR] Failed to stop hev-socks5-tunnel: ${e.message}")
+        }
 
         socksProxy?.stop()
         socksProxy = null
