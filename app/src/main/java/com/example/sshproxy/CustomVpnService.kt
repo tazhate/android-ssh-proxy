@@ -61,7 +61,7 @@ class CustomVpnService : VpnService() {
     private val MAX_RECONNECT_ATTEMPTS = 10
     private val BASE_RECONNECT_DELAY_MS = 2000L
 
-    // --- Config (unchanged) ---
+    // --- Config ---
     private var sshHost: String = ""
     private var sshPort: String = ""
     private var sshUser: String = ""
@@ -83,7 +83,7 @@ class CustomVpnService : VpnService() {
     private var receiveBuffer: Int = 32768
     private var pingUrl: String = "https://dns.google"
     private var pingInterval: Int = 2000
-    private var pingTimeout: Int = 10000 // increased to 10s
+    private var pingTimeout: Int = 10000 // 10s default
 
     override fun onCreate() {
         super.onCreate()
@@ -134,7 +134,7 @@ class CustomVpnService : VpnService() {
         receiveBuffer = intent.getIntExtra("receiveBuffer", 32768)
         pingUrl = intent.getStringExtra("pingUrl") ?: "https://dns.google"
         pingInterval = intent.getIntExtra("pingInterval", 2000)
-        pingTimeout = intent.getIntExtra("pingTimeout", 10000) // 10s default
+        pingTimeout = intent.getIntExtra("pingTimeout", 10000)
         LogManager.addLog("[DEBUG] Payload received: ${payload.take(100)}...")
     }
 
@@ -233,7 +233,6 @@ class CustomVpnService : VpnService() {
 
         establishSSH(compressionFailed)
 
-        // Once SSH is authenticated, set up VPN and start SOCKS5 + tun2socks
         isConnected.set(true)
         _state.value = VpnState.CONNECTED
         reconnectAttempts = 0
@@ -269,7 +268,7 @@ class CustomVpnService : VpnService() {
         if (session.isConnected) {
             sshSession = session
             LogManager.addLog("SSH authenticated")
-            // DO NOT open a shell channel – we use SOCKS5 + tun2socks.
+            // DO NOT open a shell channel – SOCKS5 + tun2socks handle traffic.
         } else {
             throw JSchException("SSH connection failed")
         }
@@ -305,8 +304,8 @@ class CustomVpnService : VpnService() {
         socksProxy = proxy
         LogManager.addLog("[SOCKS5] Proxy running on 127.0.0.1:$socksPort")
 
-        // 3. Start hev-socks5-tunnel to forward TUN traffic
-        val tunFd = vpnInterface!!.fileDescriptor
+        // 3. Start hev-socks5-tunnel – use .fd to get the integer file descriptor
+        val tunFd = vpnInterface!!.fd   // <-- FIXED: .fd instead of .fileDescriptor
         try {
             val result = HevSocks5Tunnel.start(tunFd, "127.0.0.1", socksPort, mtu)
             if (result == 0) {
@@ -332,11 +331,9 @@ class CustomVpnService : VpnService() {
         pingJob?.cancel()
         stateJob?.cancel()
 
-        // Stop SOCKS5 proxy
         socksProxy?.stop()
         socksProxy = null
 
-        // Stop SSH session and close socket
         sshSession?.disconnect()
         sshSession = null
         tunnelSocket?.close()
