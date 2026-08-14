@@ -1,5 +1,5 @@
 package com.example.sshproxy
-import com.example.sshproxy.tun2socks.HevSocks5Tunnel
+
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
@@ -14,7 +14,7 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.example.sshproxy.payload.PayloadProcessor
 import com.example.sshproxy.proxy.ConnectionStrategy
 import com.example.sshproxy.proxy.ProxyConnectionException
-import com.example.sshproxy.tun2socks.HevSocks5Tunnel
+import com.example.sshproxy.tun2socks.HevSocks5Tunnel   // <-- only ONE import
 import com.jcraft.jsch.JSch
 import com.jcraft.jsch.JSchException
 import com.jcraft.jsch.Session
@@ -278,7 +278,6 @@ class CustomVpnService : VpnService() {
         if (session.isConnected) {
             sshSession = session
             LogManager.addLog("SSH authenticated")
-            // DO NOT open a shell channel – SOCKS5 + tun2socks handle traffic.
         } else {
             throw JSchException("SSH connection failed")
         }
@@ -294,7 +293,7 @@ class CustomVpnService : VpnService() {
         vpnInterface = Builder()
             .addAddress("10.0.0.2", 32)
             .addRoute("0.0.0.0", 0)
-            .addRoute("::", 0) // IPv6 leak protection
+            .addRoute("::", 0)
             .addDnsServer(dnsPrimary)
             .addDnsServer(dnsSecondary)
             .setSession("Gtunnel")
