@@ -103,7 +103,7 @@ class ProxyConnector {
             LogManager.addLog("[ProxyConnector] No payload to send (usePayload=false)")
         }
 
-        // ---- READ THE RESPONSE (block with timeout) ----
+        // ---- Read the response ----
         try {
             // Increase timeout for reading the response
             socket.soTimeout = 10000 // 10 seconds for the response
@@ -113,7 +113,6 @@ class ProxyConnector {
             var sshBannerDetected = false
             LogManager.addLog("[ProxyConnector] Reading server response...")
 
-            // Read until we hit an empty line, SSH banner, or timeout
             while (reader.ready().also { line = reader.readLine() } && line != null) {
                 if (statusLine == null) {
                     statusLine = line
@@ -132,7 +131,6 @@ class ProxyConnector {
                 }
             }
 
-            // If we didn't get a response, wait a bit longer (some servers are slow)
             if (statusLine == null && !sshBannerDetected) {
                 // Try reading one more line with a short wait
                 Thread.sleep(500)
@@ -140,7 +138,6 @@ class ProxyConnector {
                 if (line != null) {
                     statusLine = line
                     LogManager.addLog("[ProxyConnector] Delayed server status: $statusLine")
-                    // Continue reading headers until empty or SSH banner
                     while (reader.ready().also { line = reader.readLine() } && line != null) {
                         LogManager.addLog("[ProxyConnector] Delayed header: $line")
                         if (line!!.startsWith("SSH-2.0")) {
