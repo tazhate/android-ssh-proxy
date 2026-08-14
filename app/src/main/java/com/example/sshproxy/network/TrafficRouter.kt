@@ -4,20 +4,22 @@ import com.example.sshproxy.LogManager
 import java.io.FileDescriptor
 import java.io.FileInputStream
 import java.io.FileOutputStream
-import java.net.Socket
+import java.io.InputStream
+import java.io.OutputStream
 import java.util.concurrent.ConcurrentLinkedQueue
 import java.util.concurrent.atomic.AtomicBoolean
 
 class TrafficRouter(
     private val tunFileDescriptor: FileDescriptor,
-    private val tunnelSocket: Socket,
+    private val inputStream: InputStream,   // from SSH channel or socket
+    private val outputStream: OutputStream, // from SSH channel or socket
     private val sendBufferSize: Int = 16384,
     private val receiveBufferSize: Int = 32768
 ) {
     private val isRunning = AtomicBoolean(true)
     private var readThread: Thread? = null
     private var writeThread: Thread? = null
-    private val keepAliveInterval = 3000L
+    private val keepAliveInterval = 2000L // 2 seconds
 
     private val bufferPool = ConcurrentLinkedQueue<ByteArray>()
     private val poolSize = 10
@@ -31,26 +33,27 @@ class TrafficRouter(
     fun start() {
         LogManager.addLog("TrafficRouter starting")
         try {
-            tunnelSocket.soTimeout = 30000
-            tunnelSocket.tcpNoDelay = true
-            tunnelSocket.keepAlive = true
-
-            readThread = Thread { readFromTunnel() }
-            writeThread = Thread { writeToTunnel() }
+            readThread = Thread { readFromTun() }
+            writeThread = Thread { writeToTun() }
 
             readThread?.start()
             writeThread?.start()
 
+            // Keep-alive thread: send a space every 2 seconds to keep the socket/channel alive
             Thread {
-                while (isRunning.get()) {
-                    try {
-                        Thread.sleep(keepAliveInterval)
-                        if (isRunning.get() && tunnelSocket.isConnected && !tunnelSocket.isClosed) {
-                            tunnelSocket.getOutputStream().write(32)
-                            tunnelSocket.getOutputStream().flush()
+                try {
+                    // First keep-alive after 1 second
+                    Thread.sleep(1000)
+                    while (isRunning.get()) {
+                        if (isRunning.get()) {
+                            try {
+                                outputStream.write(32)
+                                outputStream.flush()
+                            } catch (_: Exception) { }
                         }
-                    } catch (_: Exception) { /* ignore */ }
-                }
+                        Thread.sleep(keepAliveInterval)
+                    }
+                } catch (_: Exception) { }
             }.start()
 
         } catch (e: Exception) {
@@ -59,16 +62,15 @@ class TrafficRouter(
         }
     }
 
-    private fun readFromTunnel() {
+    private fun readFromTun() {
         LogManager.addLog("Read thread started")
-        val inputStream = FileInputStream(tunFileDescriptor)
-        val outputStream = tunnelSocket.getOutputStream()
+        val tunInput = FileInputStream(tunFileDescriptor)
         var buffer: ByteArray? = null
 
         while (isRunning.get()) {
             try {
                 buffer = acquireBuffer()
-                val len = inputStream.read(buffer)
+                val len = tunInput.read(buffer)
                 if (len > 0) {
                     outputStream.write(buffer, 0, len)
                     outputStream.flush()
@@ -86,10 +88,9 @@ class TrafficRouter(
         LogManager.addLog("Read thread stopped")
     }
 
-    private fun writeToTunnel() {
+    private fun writeToTun() {
         LogManager.addLog("Write thread started")
-        val outputStream = FileOutputStream(tunFileDescriptor)
-        val inputStream = tunnelSocket.getInputStream()
+        val tunOutput = FileOutputStream(tunFileDescriptor)
         var buffer: ByteArray? = null
 
         while (isRunning.get()) {
@@ -97,8 +98,8 @@ class TrafficRouter(
                 buffer = acquireBuffer()
                 val len = inputStream.read(buffer)
                 if (len > 0) {
-                    outputStream.write(buffer, 0, len)
-                    outputStream.flush()
+                    tunOutput.write(buffer, 0, len)
+                    tunOutput.flush()
                 }
                 releaseBuffer(buffer)
             } catch (e: Exception) {
@@ -128,7 +129,8 @@ class TrafficRouter(
         readThread?.interrupt()
         writeThread?.interrupt()
         try {
-            tunnelSocket.close()
+            inputStream.close()
+            outputStream.close()
         } catch (_: Exception) { }
         LogManager.addLog("TrafficRouter stopped")
     }
