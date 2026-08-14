@@ -351,29 +351,31 @@ class CustomVpnService : VpnService() {
     }
 
     private fun createTProxyConfig(socksPort: Int, mtu: Int): String? {
-        return try {
-            val configFile = File(cacheDir, "tproxy.conf")
-            configFile.createNewFile()
-            FileOutputStream(configFile).use { fos ->
-                val config = """
-                    misc:
-                      task-stack-size: 65536
-                    tunnel:
-                      mtu: $mtu
-                      icmp: 'reply'
-                    socks5:
-                      port: $socksPort
-                      address: '127.0.0.1'
-                      udp: 'tcp'
-                """.trimIndent()
-                fos.write(config.toByteArray())
-            }
-            configFile.absolutePath
-        } catch (e: Exception) {
-            LogManager.addLog("[ERROR] Failed to create tproxy config: ${e.message}")
-            null
+    return try {
+        val configFile = File(cacheDir, "tproxy.conf")
+        configFile.createNewFile()
+        FileOutputStream(configFile).use { fos ->
+            val config = """
+                misc:
+                  task-stack-size: 65536
+                tunnel:
+                  name: tun0
+                  mtu: $mtu
+                  ipv4: 10.0.0.2/32
+                  icmp: 'reply'
+                socks5:
+                  port: $socksPort
+                  address: '127.0.0.1'
+                  udp: 'tcp'
+            """.trimIndent()
+            fos.write(config.toByteArray())
         }
+        configFile.absolutePath
+    } catch (e: Exception) {
+        LogManager.addLog("[ERROR] Failed to create tproxy config: ${e.message}")
+        null
     }
+}
 
     private fun disconnect() {
         _state.value = VpnState.DISCONNECTING
