@@ -56,7 +56,6 @@ dependencies {
     implementation 'androidx.appcompat:appcompat:1.6.1'
     implementation 'androidx.constraintlayout:constraintlayout:2.1.4'
     implementation 'androidx.fragment:fragment-ktx:1.6.2'
-implementation 'com.github.cowby123:tun2socks-android:1.0.0'
 
     // Material Design & UI
     implementation 'com.google.android.material:material:1.11.0'
