@@ -331,14 +331,9 @@ class CustomVpnService : VpnService() {
         val tunFd = vpnInterface!!.fd
         try {
             LogManager.addLog("[hev-socks5-tunnel] Starting with config=$configPath, tunFd=$tunFd")
-            val result = TProxyService.TProxyStartService(configPath, tunFd)
-            if (result) {
-                LogManager.addLog("[hev-socks5-tunnel] Started successfully")
-            } else {
-                LogManager.addLog("[ERROR] hev-socks5-tunnel start failed")
-                stopSelf()
-                return
-            }
+            // IMPORTANT: The native method returns void – no return value to check
+            TProxyService.TProxyStartService(configPath, tunFd)
+            LogManager.addLog("[hev-socks5-tunnel] Started successfully (no crash = success)")
         } catch (e: UnsatisfiedLinkError) {
             LogManager.addLog("[ERROR] Native library not loaded: ${e.message}")
             throw e
@@ -367,7 +362,7 @@ class CustomVpnService : VpnService() {
                     socks5:
                       port: $socksPort
                       address: '127.0.0.1'
-                      udp: 'tcp'
+                      udp: 'udp'   # Changed from 'tcp' to 'udp' for proper UDP forwarding
                 """.trimIndent()
                 fos.write(config.toByteArray())
             }
