@@ -34,6 +34,7 @@ class LogsFragment : Fragment() {
             copyFab?.setOnClickListener { copyLogs() }
             shareFab?.setOnClickListener { shareLogs() }
         } catch (e: Exception) {
+            // If FABs are missing, just ignore – the text view still works
             e.printStackTrace()
         }
 
