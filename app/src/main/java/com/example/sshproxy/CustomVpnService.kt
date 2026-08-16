@@ -291,7 +291,7 @@ class CustomVpnService : VpnService() {
 
         // 1. Create TUN interface
         vpnInterface = Builder()
-            .addAddress("10.0.0.2", 32)
+            .addAddress("10.0.0.2", 24)  // Use /24 to help routing
             .addRoute("0.0.0.0", 0)
             .addRoute("::", 0)
             .addDnsServer(dnsPrimary)
@@ -306,6 +306,9 @@ class CustomVpnService : VpnService() {
             return
         }
         LogManager.addLog("Local IP: 10.0.0.2, DNS: $dnsPrimary / $dnsSecondary, MTU: $mtu")
+
+        // Small delay to let the interface settle
+        Thread.sleep(200)
 
         // 2. Start SOCKS5 proxy over SSH
         try {
@@ -327,11 +330,11 @@ class CustomVpnService : VpnService() {
         }
         LogManager.addLog("[tproxy] Config written to $configPath")
 
-        // 4. Start hev-socks5-tunnel using the correct JNI wrapper
+        // 4. Start hev-socks5-tunnel – CORRECTED call (void, no return check)
         val tunFd = vpnInterface!!.fd
         try {
             LogManager.addLog("[hev-socks5-tunnel] Starting with config=$configPath, tunFd=$tunFd")
-            // IMPORTANT: The native method returns void – no return value to check
+            // IMPORTANT: This method returns void – do not check a return value
             TProxyService.TProxyStartService(configPath, tunFd)
             LogManager.addLog("[hev-socks5-tunnel] Started successfully (no crash = success)")
         } catch (e: UnsatisfiedLinkError) {
@@ -354,15 +357,23 @@ class CustomVpnService : VpnService() {
                 val config = """
                     misc:
                       task-stack-size: 65536
+                      log-file: /data/local/tmp/hev.log
+                      log-level: debug
                     tunnel:
                       name: tun0
                       mtu: $mtu
-                      ipv4: 10.0.0.2/32
+                      ipv4: 10.0.0.2/24
                       icmp: 'reply'
                     socks5:
                       port: $socksPort
                       address: '127.0.0.1'
-                      udp: 'udp'   # Changed from 'tcp' to 'udp' for proper UDP forwarding
+                      udp: 'udp'
+                    mapdns:
+                      address: '1.1.1.1'
+                      port: 53
+                      network: 'udp'
+                      netmask: 32
+                      cache-size: 256
                 """.trimIndent()
                 fos.write(config.toByteArray())
             }
