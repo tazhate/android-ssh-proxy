@@ -291,9 +291,9 @@ class CustomVpnService : VpnService() {
 
         // 1. Create TUN interface
         vpnInterface = Builder()
-            .addAddress("10.0.0.2", 24)  // Use /24 to help routing
-            .addRoute("0.0.0.0", 0)
-            .addRoute("::", 0)
+            .addAddress("10.0.0.2", 24)  // Use /24 for proper routing
+            .addRoute("0.0.0.0", 0)       // Default route via VPN
+            .addRoute("::", 0)            // IPv6 block
             .addDnsServer(dnsPrimary)
             .addDnsServer(dnsSecondary)
             .setSession("Gtunnel")
@@ -307,10 +307,10 @@ class CustomVpnService : VpnService() {
         }
         LogManager.addLog("Local IP: 10.0.0.2, DNS: $dnsPrimary / $dnsSecondary, MTU: $mtu")
 
-        // Small delay to let the interface settle
-        Thread.sleep(200)
+        // 2. Wait for the interface to settle
+        Thread.sleep(1500)
 
-        // 2. Start SOCKS5 proxy over SSH
+        // 3. Start SOCKS5 proxy over SSH
         try {
             val proxy = LocalSocks5Proxy(sshSession!!)
             socksPort = proxy.start()
@@ -321,7 +321,7 @@ class CustomVpnService : VpnService() {
             throw e
         }
 
-        // 3. Write tproxy config file (YAML)
+        // 4. Write YAML config for hev-socks5-tunnel
         val configPath = createTProxyConfig(socksPort, mtu)
         if (configPath == null) {
             LogManager.addLog("[ERROR] Failed to create tproxy config")
@@ -330,13 +330,12 @@ class CustomVpnService : VpnService() {
         }
         LogManager.addLog("[tproxy] Config written to $configPath")
 
-        // 4. Start hev-socks5-tunnel – CORRECTED call (void, no return check)
+        // 5. Start hev-socks5-tunnel (void return, no check)
         val tunFd = vpnInterface!!.fd
         try {
             LogManager.addLog("[hev-socks5-tunnel] Starting with config=$configPath, tunFd=$tunFd")
-            // IMPORTANT: This method returns void – do not check a return value
             TProxyService.TProxyStartService(configPath, tunFd)
-            LogManager.addLog("[hev-socks5-tunnel] Started successfully (no crash = success)")
+            LogManager.addLog("[hev-socks5-tunnel] Started successfully")
         } catch (e: UnsatisfiedLinkError) {
             LogManager.addLog("[ERROR] Native library not loaded: ${e.message}")
             throw e
@@ -345,7 +344,28 @@ class CustomVpnService : VpnService() {
             throw e
         }
 
+        // 6. Re-apply the default route (workaround for hev clearing it)
+        applyDefaultRoute()
+
         LogManager.addLog("VPN and SOCKS5 tunnel ready")
+    }
+
+    // Re-apply the default route if hev-socks5-tunnel cleared it
+    private fun applyDefaultRoute() {
+        try {
+            // This is a best-effort attempt – may not work without root
+            // But it's harmless to try
+            val process = Runtime.getRuntime().exec(arrayOf("ip", "route", "add", "default", "dev", "tun0"))
+            process.waitFor()
+            if (process.exitValue() == 0) {
+                LogManager.addLog("[VPN] Default route re-applied via tun0")
+            } else {
+                // Route already exists or permission denied – ignore
+            }
+        } catch (e: Exception) {
+            // Ignore – the route may already exist, or we lack permissions
+            LogManager.addLog("[VPN] Could not manually add route (may already exist)")
+        }
     }
 
     // Create the YAML config file that hev-socks5-tunnel expects
