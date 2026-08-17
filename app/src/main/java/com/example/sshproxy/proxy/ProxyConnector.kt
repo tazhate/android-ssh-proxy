@@ -37,12 +37,15 @@ class ProxyConnector {
             return socket
         }
 
-        // Process payload placeholders
-        val processedPayload = PayloadProcessor.process(payload, sshHost, proxyHost, userAgent)
+        // Process payload using your actual PayloadProcessor
+        val host = sshHost
+        val port = sshPort.toString()
+        val proxy = proxyHost
+        val processedPayload = PayloadProcessor.processPayload(payload, host, port, proxy, userAgent)
 
         if (useEnhanced) {
-            // ----- ENHANCED MODE: Split and send parts -----
-            val parts = processedPayload.split("\\[split\\]")
+            // Split using the actual splitPayload method
+            val parts = PayloadProcessor.splitPayload(processedPayload)
             LogManager.addLog("[ProxyConnector] Enhanced: ${parts.size} parts")
 
             for ((index, part) in parts.withIndex()) {
@@ -66,7 +69,7 @@ class ProxyConnector {
                 }
             }
         } else {
-            // ----- STANDARD MODE: Send whole payload -----
+            // Standard mode: send the whole processed payload
             output.write(processedPayload.toByteArray())
             output.flush()
             LogManager.addLog("[ProxyConnector] Payload sent (1 part)")
