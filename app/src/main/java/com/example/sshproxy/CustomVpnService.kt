@@ -35,6 +35,7 @@ class CustomVpnService : VpnService() {
         private const val NOTIFICATION_ID = 1
         private const val TAG = "CustomVpnService"
         private const val WAKELOCK_TAG = "HttpCustom:WakeLock"
+        private const val VPN_IP = "10.0.0.2"
 
         const val ACTION_CONNECT = "com.example.sshproxy.CONNECT"
         const val ACTION_DISCONNECT = "com.example.sshproxy.DISCONNECT"
@@ -263,7 +264,6 @@ class CustomVpnService : VpnService() {
         session.setConfig("ServerAliveCountMax", "3")
         session.setConfig("TCPKeepAlive", "yes")
 
-        // Force compression OFF
         session.setConfig("compression.c2s", "none")
         session.setConfig("compression.s2c", "none")
         LogManager.addLog("SSH compression forced OFF (server compatibility)")
@@ -289,15 +289,11 @@ class CustomVpnService : VpnService() {
             return
         }
 
-        // 1. Create TUN interface
+        // --- Let hev-socks5-tunnel take full control ---
+        // Builder: only a dummy address (required by VpnService) + MTU.
+        // hev will set the real address, routes, and DNS from YAML.
         vpnInterface = Builder()
-            .addAddress("10.0.0.2", 24)  // Use /24 for proper routing
-            .addRoute("0.0.0.0", 0)       // Default route via VPN
-            .addRoute("::", 0)            // IPv6 block
-            .addDnsServer(dnsPrimary)
-            .addDnsServer(dnsSecondary)
-            .setSession("Gtunnel")
-            .setBlocking(true)
+            .addAddress("10.255.255.1", 32)   // dummy – will be overwritten by hev
             .setMtu(mtu)
             .establish()
 
@@ -305,12 +301,11 @@ class CustomVpnService : VpnService() {
             LogManager.addLog("[ERROR] VPN interface creation failed")
             return
         }
-        LogManager.addLog("Local IP: 10.0.0.2, DNS: $dnsPrimary / $dnsSecondary, MTU: $mtu")
 
-        // 2. Wait for the interface to settle
-        Thread.sleep(1500)
+        // Wait for the interface to settle
+        Thread.sleep(500)
 
-        // 3. Start SOCKS5 proxy over SSH
+        // Start SOCKS5 proxy over SSH
         try {
             val proxy = LocalSocks5Proxy(sshSession!!)
             socksPort = proxy.start()
@@ -321,7 +316,7 @@ class CustomVpnService : VpnService() {
             throw e
         }
 
-        // 4. Write YAML config for hev-socks5-tunnel
+        // Write YAML config – hev manages everything here
         val configPath = createTProxyConfig(socksPort, mtu)
         if (configPath == null) {
             LogManager.addLog("[ERROR] Failed to create tproxy config")
@@ -330,7 +325,7 @@ class CustomVpnService : VpnService() {
         }
         LogManager.addLog("[tproxy] Config written to $configPath")
 
-        // 5. Start hev-socks5-tunnel (void return, no check)
+        // Start hev-socks5-tunnel
         val tunFd = vpnInterface!!.fd
         try {
             LogManager.addLog("[hev-socks5-tunnel] Starting with config=$configPath, tunFd=$tunFd")
@@ -344,31 +339,9 @@ class CustomVpnService : VpnService() {
             throw e
         }
 
-        // 6. Re-apply the default route (workaround for hev clearing it)
-        applyDefaultRoute()
-
-        LogManager.addLog("VPN and SOCKS5 tunnel ready")
+        LogManager.addLog("VPN and SOCKS5 tunnel ready (hev manages routing)")
     }
 
-    // Re-apply the default route if hev-socks5-tunnel cleared it
-    private fun applyDefaultRoute() {
-        try {
-            // This is a best-effort attempt – may not work without root
-            // But it's harmless to try
-            val process = Runtime.getRuntime().exec(arrayOf("ip", "route", "add", "default", "dev", "tun0"))
-            process.waitFor()
-            if (process.exitValue() == 0) {
-                LogManager.addLog("[VPN] Default route re-applied via tun0")
-            } else {
-                // Route already exists or permission denied – ignore
-            }
-        } catch (e: Exception) {
-            // Ignore – the route may already exist, or we lack permissions
-            LogManager.addLog("[VPN] Could not manually add route (may already exist)")
-        }
-    }
-
-    // Create the YAML config file that hev-socks5-tunnel expects
     private fun createTProxyConfig(socksPort: Int, mtu: Int): String? {
         return try {
             val configFile = File(filesDir, "tproxy.conf")
@@ -384,6 +357,8 @@ class CustomVpnService : VpnService() {
                       mtu: $mtu
                       ipv4: 10.0.0.2/24
                       icmp: 'reply'
+                      routes:
+                        - "0.0.0.0/0"
                     socks5:
                       port: $socksPort
                       address: '127.0.0.1'
@@ -411,7 +386,6 @@ class CustomVpnService : VpnService() {
         pingJob?.cancel()
         stateJob?.cancel()
 
-        // Stop hev-socks5-tunnel
         try {
             TProxyService.TProxyStopService()
             LogManager.addLog("[hev-socks5-tunnel] Stopped")
@@ -462,7 +436,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // --- Ping ---
     private fun startPing() {
         pingJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected.get()) {
@@ -486,7 +459,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // --- Helper methods ---
     private fun startReconnectMonitor() {
         stateJob = CoroutineScope(Dispatchers.IO).launch {
             while (isConnected.get()) {
@@ -534,6 +506,14 @@ class CustomVpnService : VpnService() {
     private fun acquireWakeLock() {
         try {
             wakeLock?.acquire(10 * 60 * 1000L)
+        } catch (e: Exception) {
+            LogManager.addLog("[ERROR] WakeLock acquire failed: ${e.message}")
+        }
+    }
+
+    private fun releaseWakeLock() {
+        try {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
         } catch (e: Exception) {
             LogManager.addLog("[ERROR] WakeLock acquire failed: ${e.message}")
         }
