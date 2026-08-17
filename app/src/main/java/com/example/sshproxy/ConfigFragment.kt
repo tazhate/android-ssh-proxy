@@ -23,6 +23,7 @@ class ConfigFragment : Fragment() {
 
     private lateinit var configRepository: ConfigRepository
 
+    // Pre-built presets
     data class Preset(
         val name: String,
         val ssh: String,
@@ -32,7 +33,6 @@ class ConfigFragment : Fragment() {
     )
 
     private val presets = listOf(
-        // 1. Safaricom 1 – uses odi.site as proxy
         Preset(
             name = "Safaricom 1 (odi.site)",
             ssh = "ssh.ethiodragon.sbs:80@f4r_72547b1ccb:n%ss7v%yfYBCr4X4J$",
@@ -40,7 +40,6 @@ class ConfigFragment : Fragment() {
             payload = "GET /cdn-cgi/trace HTTP/1.1[crlf]Host: [proxy][crlf][crlf][split]UNLOCK /? HTTP/1.1[crlf]Host: [host][crlf]Connection: upgrade[crlf]User-Agent: [ua][crlf]Upgrade: websocket[crlf][crlf][split]UNLOCK /? HTTP/1.1[crlf]Host: [proxy][crlf]Content-Length:999999999999[crlf]",
             enhanced = true
         ),
-        // 2. Airtel 1 – uses viton.com as proxy + rotate payload
         Preset(
             name = "Airtel 1 (viton.com)",
             ssh = "ssh.ethiodragon.sbs:80@f4r_72547b1ccb:n%ss7v%yfYBCr4X4J$",
@@ -48,7 +47,6 @@ class ConfigFragment : Fragment() {
             payload = "GET /cdn-cgi/trace HTTP/1.1[crlf]Host: [rotate=apptest.airtel.ug.sg4.bonds.id;firebaseremoteconfig.googleapis.com;airtelcareapp.airtelkenya.com;h.facebook.com;device-provisioning.googleapis.com;www-cloudflaer.speedtest.net][crlf]User-Agent: [ua][crlf]Referer: [https/host][crlf][crlf][split]UNLOCK /? HTTP/1.1[crlf]Host: [host][crlf]Connection: upgrade[crlf]User-Agent: [ua][crlf]Upgrade: websocket[crlf][crlf][split]UNLOCK /? HTTP/1.1[crlf]Host: [proxy][crlf]Content-Length:999999999999[crlf]",
             enhanced = true
         ),
-        // 3. Airtel 2 – uses 104.18.8.127 as proxy (IP) + same payload as Safaricom
         Preset(
             name = "Airtel 2 (104.18.8.127)",
             ssh = "ssh.ethiodragon.sbs:80@f4r_72547b1ccb:n%ss7v%yfYBCr4X4J$",
@@ -56,7 +54,6 @@ class ConfigFragment : Fragment() {
             payload = "GET /cdn-cgi/trace HTTP/1.1[crlf]Host: [proxy][crlf][crlf][split]UNLOCK /? HTTP/1.1[crlf]Host: [host][crlf]Connection: upgrade[crlf]User-Agent: [ua][crlf]Upgrade: websocket[crlf][crlf][split]UNLOCK /? HTTP/1.1[crlf]Host: [proxy][crlf]Content-Length:999999999999[crlf]",
             enhanced = true
         ),
-        // 4. Placeholder for manual entry
         Preset(
             name = "Custom (manual)",
             ssh = "",
@@ -81,19 +78,30 @@ class ConfigFragment : Fragment() {
         val db = ConfigDatabase.getInstance(requireContext())
         configRepository = ConfigRepository(db.configDao())
 
+        // Get views from binding (using your actual layout IDs)
+        val presetSpinner = binding.presetSpinner
+        val sshInput = binding.sshDetailsInput
+        val proxyInput = binding.proxyInput
+        val payloadInput = binding.payloadInput
+        val splitDelayInput = binding.splitDelayInput
+        val dnsPrimaryInput = binding.dnsPrimaryInput
+        val dnsSecondaryInput = binding.dnsSecondaryInput
+        val enhancedToggle = binding.enhancedToggle
+        val toggleButton = binding.toggleButton
+
         // Populate preset spinner
         val presetNames = presets.map { it.name }.toTypedArray()
         val adapter = ArrayAdapter(requireContext(), android.R.layout.simple_spinner_item, presetNames)
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
-        binding.presetSpinner.adapter = adapter
+        presetSpinner.adapter = adapter
 
-        binding.presetSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+        presetSpinner.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
             override fun onItemSelected(parent: AdapterView<*>?, view: View?, position: Int, id: Long) {
                 val preset = presets[position]
-                binding.sshDetails.setText(preset.ssh)
-                binding.remoteProxy.setText(preset.proxy)
-                binding.payloadText.setText(preset.payload)
-                binding.enhancedToggle.isChecked = preset.enhanced
+                sshInput.setText(preset.ssh)
+                proxyInput.setText(preset.proxy)
+                payloadInput.setText(preset.payload)
+                enhancedToggle.isChecked = preset.enhanced
             }
             override fun onNothingSelected(parent: AdapterView<*>?) {}
         }
@@ -101,25 +109,28 @@ class ConfigFragment : Fragment() {
         // Load last saved config
         loadConfig()
 
-        // Connect button
-        binding.connectButton.setOnClickListener {
-            saveConfig()
-            startVpn()
+        // Toggle button (Connect/Disconnect)
+        toggleButton.setOnClickListener {
+            if (toggleButton.text == "Connect") {
+                saveConfig()
+                startVpn()
+            } else {
+                disconnectVpn()
+            }
         }
     }
 
     private fun loadConfig() {
         lifecycleScope.launch {
-            val config = configRepository.getLatestConfig()
+            val config = configRepository.getLatest()
             if (config != null) {
-                binding.sshDetails.setText(config.sshDetails)
-                binding.remoteProxy.setText(config.remoteProxy)
-                binding.payloadText.setText(config.payload)
-                binding.splitDelay.setText(config.splitDelay.toString())
-                binding.dnsPrimary.setText(config.dnsPrimary)
-                binding.dnsSecondary.setText(config.dnsSecondary)
+                binding.sshDetailsInput.setText(config.sshDetails)
+                binding.proxyInput.setText(config.remoteProxy)
+                binding.payloadInput.setText(config.payload)
+                binding.splitDelayInput.setText(config.splitDelay.toString())
+                binding.dnsPrimaryInput.setText(config.dnsPrimary)
+                binding.dnsSecondaryInput.setText(config.dnsSecondary)
                 binding.enhancedToggle.isChecked = config.enhanced
-                // ... other fields
             }
         }
     }
@@ -127,14 +138,13 @@ class ConfigFragment : Fragment() {
     private fun saveConfig() {
         lifecycleScope.launch {
             val config = ConfigEntity(
-                sshDetails = binding.sshDetails.text.toString(),
-                remoteProxy = binding.remoteProxy.text.toString(),
-                payload = binding.payloadText.text.toString(),
-                splitDelay = binding.splitDelay.text.toString().toIntOrNull() ?: 500,
-                dnsPrimary = binding.dnsPrimary.text.toString(),
-                dnsSecondary = binding.dnsSecondary.text.toString(),
-                enhanced = binding.enhancedToggle.isChecked,
-                // ... other fields
+                sshDetails = binding.sshDetailsInput.text.toString(),
+                remoteProxy = binding.proxyInput.text.toString(),
+                payload = binding.payloadInput.text.toString(),
+                splitDelay = binding.splitDelayInput.text.toString().toIntOrNull() ?: 500,
+                dnsPrimary = binding.dnsPrimaryInput.text.toString(),
+                dnsSecondary = binding.dnsSecondaryInput.text.toString(),
+                enhanced = binding.enhancedToggle.isChecked
             )
             configRepository.saveConfig(config)
         }
@@ -143,24 +153,32 @@ class ConfigFragment : Fragment() {
     private fun startVpn() {
         val intent = Intent(requireContext(), CustomVpnService::class.java).apply {
             action = CustomVpnService.ACTION_CONNECT
-            putExtra("sshHost", binding.sshDetails.text.toString())
+            putExtra("sshHost", binding.sshDetailsInput.text.toString())
             putExtra("sshPort", "80")
-            val sshParts = binding.sshDetails.text.toString().split("@")
+            val sshParts = binding.sshDetailsInput.text.toString().split("@")
             val credentials = sshParts.getOrNull(1)?.split(":") ?: listOf()
             putExtra("sshUser", credentials.getOrNull(0) ?: "")
             putExtra("sshPass", credentials.getOrNull(1) ?: "")
-            val proxyParts = binding.remoteProxy.text.toString().split(":")
+            val proxyParts = binding.proxyInput.text.toString().split(":")
             putExtra("proxyHost", proxyParts.getOrNull(0) ?: "")
             putExtra("proxyPort", proxyParts.getOrNull(1) ?: "80")
-            putExtra("payload", binding.payloadText.text.toString())
-            putExtra("splitDelay", binding.splitDelay.text.toString().toIntOrNull() ?: 500)
-            putExtra("dnsPrimary", binding.dnsPrimary.text.toString())
-            putExtra("dnsSecondary", binding.dnsSecondary.text.toString())
+            putExtra("payload", binding.payloadInput.text.toString())
+            putExtra("splitDelay", binding.splitDelayInput.text.toString().toIntOrNull() ?: 500)
+            putExtra("dnsPrimary", binding.dnsPrimaryInput.text.toString())
+            putExtra("dnsSecondary", binding.dnsSecondaryInput.text.toString())
             putExtra("enhanced", binding.enhancedToggle.isChecked)
-            // Add other fields as needed
         }
         requireContext().startService(intent)
+        binding.toggleButton.text = "Disconnect"
         Toast.makeText(requireContext(), "Connecting...", Toast.LENGTH_SHORT).show()
+    }
+
+    private fun disconnectVpn() {
+        val intent = Intent(requireContext(), CustomVpnService::class.java).apply {
+            action = CustomVpnService.ACTION_DISCONNECT
+        }
+        requireContext().startService(intent)
+        binding.toggleButton.text = "Connect"
     }
 
     override fun onDestroyView() {
