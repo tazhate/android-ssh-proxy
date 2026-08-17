@@ -4,7 +4,8 @@ import kotlinx.coroutines.flow.Flow
 
 class ConfigRepository(private val configDao: ConfigDao) {
 
-    fun getLatestConfig(): Flow<ConfigEntity?> = configDao.getLatestConfig()
+    // Uses your actual DAO method: getLatest()
+    suspend fun getLatest(): ConfigEntity? = configDao.getLatest()
 
     suspend fun saveConfig(config: ConfigEntity) {
         configDao.insert(config)
