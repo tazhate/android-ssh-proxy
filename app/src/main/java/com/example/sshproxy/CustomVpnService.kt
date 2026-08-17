@@ -88,6 +88,7 @@ class CustomVpnService : VpnService() {
     private var pingUrl: String = "https://dns.google"
     private var pingInterval: Int = 2000
     private var pingTimeout: Int = 10000
+    private var enhanced: Boolean = false  // <-- NEW
 
     override fun onCreate() {
         super.onCreate()
@@ -139,7 +140,9 @@ class CustomVpnService : VpnService() {
         pingUrl = intent.getStringExtra("pingUrl") ?: "https://dns.google"
         pingInterval = intent.getIntExtra("pingInterval", 2000)
         pingTimeout = intent.getIntExtra("pingTimeout", 10000)
+        enhanced = intent.getBooleanExtra("enhanced", false)  // <-- NEW
         LogManager.addLog("[DEBUG] Payload received: ${payload.take(100)}...")
+        LogManager.addLog("[DEBUG] Enhanced mode: $enhanced")
     }
 
     private fun connect() {
@@ -225,7 +228,8 @@ class CustomVpnService : VpnService() {
                 followRedirects = followRedirects,
                 splitDelayMs = splitDelayMs.toLong(),
                 useSsl = useSsl,
-                usePayload = usePayload
+                usePayload = usePayload,
+                useEnhanced = enhanced  // <-- NEW
             )
         } catch (e: ProxyConnectionException) {
             LogManager.addLog("[ERROR] All connection strategies failed: ${e.message}")
@@ -500,7 +504,6 @@ class CustomVpnService : VpnService() {
         }
     }
 
-    // WakeLock helpers (defined only once)
     private fun acquireWakeLock() {
         try {
             wakeLock?.acquire(10 * 60 * 1000L)
