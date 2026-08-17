@@ -4,69 +4,41 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
-    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
-    <uses-permission android:name="android.permission.QUERY_ALL_PACKAGES"
-        tools:ignore="QueryAllPackagesPermission" />
 
     <application
         android:allowBackup="true"
-        android:dataExtractionRules="@xml/data_extraction_rules"
-        android:fullBackupContent="@xml/backup_rules"
         android:icon="@mipmap/ic_launcher"
         android:label="@string/app_name"
-        android:supportsRtl="true"
-        android:theme="@style/Theme.SshProxy"
-        tools:targetApi="28">
-        
+        android:theme="@style/Theme.MaterialComponents.Light.NoActionBar"
+        android:usesCleartextTraffic="true"
+        tools:targetApi="31">
+
         <activity
-            android:name=".MainActivity"
+            android:name=".HttpCustomActivity"
             android:exported="true"
-            android:launchMode="singleTask">
+            android:launchMode="singleTop">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        
-        <!-- Transparent activity for VPN permission from widget -->
-        <activity
-            android:name=".VpnPermissionActivity"
-            android:exported="false"
-            android:theme="@style/Theme.SshProxy.Transparent"
-            android:excludeFromRecents="true"
-            android:taskAffinity=""
-            android:launchMode="singleInstance">
-        </activity>
+
+        <!-- ❌ REMOVE THIS IF IT EXISTS (no android:name) -->
+        <!-- <activity android:exported="true"></activity> -->
 
         <service
-            android:name=".SshProxyService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="dataSync"
+            android:name=".CustomVpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
-            tools:targetApi="p">
+            android:exported="false"
+            android:foregroundServiceType="dataSync">
             <intent-filter>
                 <action android:name="android.net.VpnService" />
             </intent-filter>
         </service>
-            
-    <receiver android:name="com.example.sshproxy.widget.VPNStatusWidgetProvider" android:exported="true" tools:ignore="ExportedReceiver">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="com.example.sshproxy.widget.ACTION_TOGGLE_VPN" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/widget_vpn_status" />
-        </receiver>
-    </application>
 
+    </application>
 </manifest>
