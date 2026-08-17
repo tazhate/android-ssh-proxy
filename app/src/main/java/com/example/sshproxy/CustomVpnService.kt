@@ -289,9 +289,7 @@ class CustomVpnService : VpnService() {
             return
         }
 
-        // --- Let hev-socks5-tunnel take full control ---
-        // Builder: only a dummy address (required by VpnService) + MTU.
-        // hev will set the real address, routes, and DNS from YAML.
+        // Let hev-socks5-tunnel take full control
         vpnInterface = Builder()
             .addAddress("10.255.255.1", 32)   // dummy – will be overwritten by hev
             .setMtu(mtu)
@@ -302,10 +300,9 @@ class CustomVpnService : VpnService() {
             return
         }
 
-        // Wait for the interface to settle
         Thread.sleep(500)
 
-        // Start SOCKS5 proxy over SSH
+        // Start SOCKS5 proxy
         try {
             val proxy = LocalSocks5Proxy(sshSession!!)
             socksPort = proxy.start()
@@ -325,7 +322,7 @@ class CustomVpnService : VpnService() {
         }
         LogManager.addLog("[tproxy] Config written to $configPath")
 
-        // Start hev-socks5-tunnel
+        // Start hev
         val tunFd = vpnInterface!!.fd
         try {
             LogManager.addLog("[hev-socks5-tunnel] Starting with config=$configPath, tunFd=$tunFd")
@@ -503,17 +500,10 @@ class CustomVpnService : VpnService() {
         }
     }
 
+    // WakeLock helpers (defined only once)
     private fun acquireWakeLock() {
         try {
             wakeLock?.acquire(10 * 60 * 1000L)
-        } catch (e: Exception) {
-            LogManager.addLog("[ERROR] WakeLock acquire failed: ${e.message}")
-        }
-    }
-
-    private fun releaseWakeLock() {
-        try {
-            if (wakeLock?.isHeld == true) wakeLock?.release()
         } catch (e: Exception) {
             LogManager.addLog("[ERROR] WakeLock acquire failed: ${e.message}")
         }
