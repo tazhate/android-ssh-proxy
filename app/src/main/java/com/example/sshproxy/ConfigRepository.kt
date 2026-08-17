@@ -1,61 +1,16 @@
-package com.example.sshproxy
+package com.example.sshproxy.data
 
-import com.example.sshproxy.data.ConfigDatabase
-import com.example.sshproxy.data.ConfigEntity
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.Flow
 
-class ConfigRepository(private val context: android.content.Context) {
+class ConfigRepository(private val configDao: ConfigDao) {
 
-    private val database = ConfigDatabase.getDatabase(context)
-    private val dao = database.configDao()
+    fun getLatestConfig(): Flow<ConfigEntity?> = configDao.getLatestConfig()
 
-    fun saveConfig(
-        sshDetails: String,
-        proxyInput: String,
-        payload: String,
-        splitDelay: Int,
-        dnsServer: String,
-        pingTarget: String,
-        enableCompression: Boolean,
-        mtu: Int,
-        sendBuffer: Int,
-        receiveBuffer: Int,
-        pingUrl: String,
-        pingInterval: Int,
-        pingTimeout: Int,
-        alwaysReconnect: Boolean,
-        followRedirects: Boolean   // NEW
-    ) {
-        CoroutineScope(Dispatchers.IO).launch {
-            val entity = ConfigEntity(
-                sshDetails = sshDetails,
-                proxyInput = proxyInput,
-                payload = payload,
-                splitDelay = splitDelay,
-                dnsServer = dnsServer,
-                pingTarget = pingTarget,
-                enableCompression = enableCompression,
-                mtu = mtu,
-                sendBuffer = sendBuffer,
-                receiveBuffer = receiveBuffer,
-                pingUrl = pingUrl,
-                pingInterval = pingInterval,
-                pingTimeout = pingTimeout,
-                alwaysReconnect = alwaysReconnect,
-                followRedirects = followRedirects
-            )
-            dao.insert(entity)
-        }
+    suspend fun saveConfig(config: ConfigEntity) {
+        configDao.insert(config)
     }
 
-    fun loadLatestConfig(callback: (ConfigEntity?) -> Unit) {
-        CoroutineScope(Dispatchers.IO).launch {
-            val config = dao.getLatest()
-            kotlinx.coroutines.GlobalScope.launch(Dispatchers.Main) {
-                callback(config)
-            }
-        }
+    suspend fun clearConfig() {
+        configDao.deleteAll()
     }
 }
