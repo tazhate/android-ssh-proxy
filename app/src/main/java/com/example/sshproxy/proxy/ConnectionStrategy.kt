@@ -5,7 +5,7 @@ import java.net.Socket
 
 class ConnectionStrategy {
 
-    fun establishTunnel(
+    suspend fun establishTunnel(
         proxyHost: String,
         proxyPort: Int,
         sshHost: String,
@@ -19,49 +19,53 @@ class ConnectionStrategy {
         splitDelayMs: Long = 500,
         useSsl: Boolean = false,
         usePayload: Boolean = true,
-        useEnhanced: Boolean = false
+        useEnhanced: Boolean = false   // <-- NEW
     ): Socket {
         val connector = ProxyConnector()
 
-        // Try direct payload mode first (if usePayload)
-        if (usePayload) {
-            try {
-                return connector.establishTunnel(
-                    proxyHost = proxyHost,
-                    proxyPort = proxyPort,
-                    sshHost = sshHost,
-                    sshPort = sshPort,
-                    payload = payload,
-                    userAgent = userAgent,
-                    connectTimeout = connectTimeout,
-                    readTimeout = readTimeout,
-                    followRedirects = followRedirects,
-                    splitDelayMs = splitDelayMs,
-                    useSsl = useSsl,
-                    usePayload = true,
-                    useEnhanced = useEnhanced
-                )
-            } catch (e: ProxyConnectionException) {
-                LogManager.addLog("[Strategy] Payload mode failed: ${e.message}")
-            }
+        // Try proxy mode first
+        try {
+            return connector.connectViaProxy(
+                proxyHost = proxyHost,
+                proxyPort = proxyPort,
+                sshHost = sshHost,
+                sshPort = sshPort,
+                payload = payload,
+                userAgent = userAgent,
+                auth = auth,
+                connectTimeout = connectTimeout,
+                readTimeout = readTimeout,
+                followRedirects = followRedirects,
+                splitDelayMs = splitDelayMs,
+                sslForProxy = useSsl,
+                sslForSSH = useSsl,
+                directFallback = false,
+                usePayload = usePayload,
+                useEnhanced = useEnhanced
+            )
+        } catch (e: ProxyConnectionException) {
+            LogManager.addLog("[Strategy] Proxy mode failed: ${e.message}")
         }
 
-        // Fallback: direct CONNECT to SSH host
-        LogManager.addLog("[Strategy] Falling back to direct CONNECT")
-        return connector.establishTunnel(
+        // Fallback: direct spoofing
+        LogManager.addLog("[Strategy] Falling back to direct spoofing")
+        return connector.connectViaProxy(
             proxyHost = sshHost,
             proxyPort = sshPort,
             sshHost = sshHost,
             sshPort = sshPort,
-            payload = "",
+            payload = payload,
             userAgent = userAgent,
+            auth = auth,
             connectTimeout = connectTimeout,
             readTimeout = readTimeout,
             followRedirects = followRedirects,
             splitDelayMs = splitDelayMs,
-            useSsl = useSsl,
-            usePayload = false,
-            useEnhanced = false
+            sslForProxy = false,
+            sslForSSH = useSsl,
+            directFallback = true,
+            usePayload = usePayload,
+            useEnhanced = useEnhanced
         )
     }
 }
