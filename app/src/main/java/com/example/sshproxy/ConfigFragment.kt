@@ -32,8 +32,9 @@ class ConfigFragment : Fragment() {
 
         loadConfig()
 
-        binding.toggleButton.setOnClickListener {
-            if (binding.toggleButton.text == "Connect") {
+        // Use your actual button ID (e.g., connectButton)
+        binding.connectButton.setOnClickListener {
+            if (binding.connectButton.text == "Connect") {
                 saveConfig()
                 startVpn()
             } else {
@@ -45,6 +46,7 @@ class ConfigFragment : Fragment() {
     private fun loadConfig() {
         configRepository.loadLatestConfig { config ->
             if (config != null) {
+                // Use your actual view IDs
                 binding.sshDetailsInput.setText(config.sshDetails)
                 binding.proxyInput.setText(config.proxyInput)
                 binding.payloadInput.setText(config.payload)
@@ -59,7 +61,7 @@ class ConfigFragment : Fragment() {
                 binding.pingTimeoutInput.setText(config.pingTimeout.toString())
                 binding.alwaysReconnectCheck.isChecked = config.alwaysReconnect
                 binding.followRedirectsCheck.isChecked = config.followRedirects
-                binding.enhancedToggle.isChecked = config.enhanced   // <-- NEW
+                binding.enhancedToggle.isChecked = config.enhanced   // <-- ADD
             }
         }
     }
@@ -81,7 +83,7 @@ class ConfigFragment : Fragment() {
             pingTimeout = binding.pingTimeoutInput.text.toString().toIntOrNull() ?: 5000,
             alwaysReconnect = binding.alwaysReconnectCheck.isChecked,
             followRedirects = binding.followRedirectsCheck.isChecked,
-            enhanced = binding.enhancedToggle.isChecked   // <-- NEW
+            enhanced = binding.enhancedToggle.isChecked   // <-- ADD
         )
     }
 
@@ -112,10 +114,10 @@ class ConfigFragment : Fragment() {
             putExtra("pingUrl", binding.pingUrlInput.text.toString())
             putExtra("pingInterval", binding.pingIntervalInput.text.toString().toIntOrNull() ?: 2000)
             putExtra("pingTimeout", binding.pingTimeoutInput.text.toString().toIntOrNull() ?: 10000)
-            putExtra("enhanced", binding.enhancedToggle.isChecked)   // <-- NEW
+            putExtra("enhanced", binding.enhancedToggle.isChecked)   // <-- ADD
         }
         requireContext().startService(intent)
-        binding.toggleButton.text = "Disconnect"
+        binding.connectButton.text = "Disconnect"
         Toast.makeText(requireContext(), "Connecting...", Toast.LENGTH_SHORT).show()
     }
 
@@ -124,7 +126,7 @@ class ConfigFragment : Fragment() {
             action = CustomVpnService.ACTION_DISCONNECT
         }
         requireContext().startService(intent)
-        binding.toggleButton.text = "Connect"
+        binding.connectButton.text = "Connect"
     }
 
     override fun onDestroyView() {
