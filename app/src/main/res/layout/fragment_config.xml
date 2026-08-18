@@ -1,0 +1,363 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:padding="16dp"
+    android:background="#F5F5F5">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical">
+
+        <!-- App Title -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Gtunnel"
+            android:textSize="24sp"
+            android:textStyle="bold"
+            android:gravity="center"
+            android:layout_marginBottom="16dp"
+            android:textColor="#2196F3" />
+
+        <!-- SSH Details -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="SSH Details"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/sshDetailsInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="host:port@username:password"
+            android:text="premium.rickydewizard.site:80@Rickydewizard:apps"
+            android:inputType="text"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="4dp" />
+
+        <!-- Remote Proxy -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Remote Proxy"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="16dp" />
+
+        <EditText
+            android:id="@+id/proxyInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="host:port  (or Base64)"
+            android:text="viton.com:80"
+            android:inputType="text"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="4dp" />
+
+        <!-- Payload -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Custom Payload"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="16dp" />
+
+        <EditText
+            android:id="@+id/payloadInput"
+            android:layout_width="match_parent"
+            android:layout_height="120dp"
+            android:hint="GET / HTTP/1.1[crlf]Host: [host][crlf]..."
+            android:inputType="textMultiLine"
+            android:gravity="top"
+            android:text="GET / HTTP/1.1[crlf]Host: [host][crlf]Upgrade: websocket[crlf][crlf]"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="4dp" />
+
+        <!-- Split Delay -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Split Delay (ms)"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="16dp" />
+
+        <EditText
+            android:id="@+id/splitDelayInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="0 = no delay"
+            android:inputType="number"
+            android:text="500"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="4dp" />
+
+        <!-- DNS Primary -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="DNS Primary"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="16dp" />
+
+        <EditText
+            android:id="@+id/dnsPrimaryInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Primary DNS"
+            android:inputType="textUri"
+            android:text="1.1.1.1"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="4dp" />
+
+        <!-- DNS Secondary -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="DNS Secondary"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/dnsSecondaryInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="Secondary DNS"
+            android:inputType="textUri"
+            android:text="1.0.0.1"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background"
+            android:layout_marginTop="4dp" />
+
+        <!-- Advanced Settings -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Advanced Settings"
+            android:textStyle="bold"
+            android:textSize="18sp"
+            android:textColor="#333333"
+            android:layout_marginTop="24dp" />
+
+        <CheckBox
+            android:id="@+id/enableCompressionCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Enable Compression (zlib)"
+            android:checked="true"
+            android:layout_marginTop="8dp" />
+
+        <CheckBox
+            android:id="@+id/alwaysReconnectCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Always Reconnect (infinite retries)"
+            android:checked="false"
+            android:layout_marginTop="8dp" />
+
+        <CheckBox
+            android:id="@+id/followRedirectsCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Follow HTTP Redirects"
+            android:checked="true"
+            android:layout_marginTop="8dp" />
+
+        <CheckBox
+            android:id="@+id/usePayloadCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Use Payload"
+            android:checked="true"
+            android:layout_marginTop="8dp" />
+
+        <CheckBox
+            android:id="@+id/proxySslCheck"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="SSL Proxy"
+            android:checked="false"
+            android:layout_marginTop="8dp" />
+
+        <!-- MTU -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="MTU"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="12dp" />
+
+        <EditText
+            android:id="@+id/mtuInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="1500"
+            android:inputType="number"
+            android:text="1500"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background" />
+
+        <!-- Buffer Sizes -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal"
+            android:layout_marginTop="8dp">
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Send Buffer"
+                    android:textStyle="bold"
+                    android:textSize="14sp"
+                    android:textColor="#666666" />
+                <EditText
+                    android:id="@+id/sendBufferInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="16384"
+                    android:inputType="number"
+                    android:text="16384"
+                    android:padding="12dp"
+                    android:background="@android:drawable/editbox_background" />
+            </LinearLayout>
+            <LinearLayout
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:layout_marginStart="8dp"
+                android:orientation="vertical">
+                <TextView
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:text="Receive Buffer"
+                    android:textStyle="bold"
+                    android:textSize="14sp"
+                    android:textColor="#666666" />
+                <EditText
+                    android:id="@+id/receiveBufferInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:hint="32768"
+                    android:inputType="number"
+                    android:text="32768"
+                    android:padding="12dp"
+                    android:background="@android:drawable/editbox_background" />
+            </LinearLayout>
+        </LinearLayout>
+
+        <!-- Ping Settings -->
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ping Settings"
+            android:textStyle="bold"
+            android:textSize="16sp"
+            android:textColor="#333333"
+            android:layout_marginTop="16dp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ping URL"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/pingUrlInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="https://dns.google"
+            android:inputType="textUri"
+            android:text="https://dns.google"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ping Interval (ms)"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/pingIntervalInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="2000"
+            android:inputType="number"
+            android:text="2000"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Ping Timeout (ms)"
+            android:textStyle="bold"
+            android:textSize="14sp"
+            android:textColor="#666666"
+            android:layout_marginTop="8dp" />
+
+        <EditText
+            android:id="@+id/pingTimeoutInput"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:hint="5000"
+            android:inputType="number"
+            android:text="5000"
+            android:padding="12dp"
+            android:background="@android:drawable/editbox_background" />
+
+        <!-- Toggle Button -->
+        <Button
+            android:id="@+id/toggleButton"
+            android:layout_width="match_parent"
+            android:layout_height="56dp"
+            android:layout_marginTop="24dp"
+            android:text="Connect"
+            android:backgroundTint="#4CAF50"
+            android:textColor="#FFFFFF" />
+
+        <!-- Status -->
+        <TextView
+            android:id="@+id/statusText"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="Status: Disconnected"
+            android:gravity="center"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:layout_marginTop="16dp" />
+
+    </LinearLayout>
+</ScrollView>
